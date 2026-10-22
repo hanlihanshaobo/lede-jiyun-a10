@@ -86,7 +86,9 @@ jobs:
       - name: Build kernel (DTS check)
         run: |
           cd lede
-          make toolchain -j"$(nproc)" || make toolchain -j1 V=s
+          # NOTE: "make toolchain" is a no-op (it is a directory); the real
+          # target that builds+installs the cross toolchain is toolchain/install
+          make toolchain/install -j"$(nproc)" || make toolchain/install -j1 V=s
           make target/linux/compile -j"$(nproc)" || make target/linux/compile -j1 V=s
 
       - name: Build

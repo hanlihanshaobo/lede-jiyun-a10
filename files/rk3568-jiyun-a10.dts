@@ -103,6 +103,9 @@
 		     &gmac0_rgmii_bus>;
 	tx_delay = <0x3c>;
 	rx_delay = <0x2f>;
+	snps,reset-gpio = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
 	status = "okay";
 
 	fixed-link {
@@ -116,83 +119,28 @@
 };
 
 &mdio0 {
-	ethernet-switch@29 {
-		compatible = "realtek,rtl8365mb";
-		reg = <29>;
-		reset-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
+	status = "okay";
 
-		mdio {
-			#address-cells = <1>;
-			#size-cells = <0>;
+	/*
+	 * RTL8367S 5-port managed switch, CPU port (7) on RGMII -> gmac0.
+	 * Node format taken from the working NSY G68 Plus (rk3568 + RTL8367S + MT7916),
+	 * which is electrically identical to the Jiyun A10.
+	 * Driver: kmod-switch-rtl8367b (out-of-tree rtl8367b.c, "realtek,rtl8367s")
+	 */
+	rtlgsw@0 {
+		compatible = "realtek,rtl8367s";
+		realtek,mdio = <&mdio0>;
+		mii-bus = <&mdio0>;
+		realtek,id = <29>;
+		phy-id = <29>;
+		cpu_port = <7>;
 
-			phy0: ethernet-phy@0 {
-				reg = <0>;
-			};
-
-			phy1: ethernet-phy@1 {
-				reg = <1>;
-			};
-
-			phy2: ethernet-phy@2 {
-				reg = <2>;
-			};
-
-			phy3: ethernet-phy@3 {
-				reg = <3>;
-			};
-
-			phy4: ethernet-phy@4 {
-				reg = <4>;
-			};
-		};
-
-		ethernet-ports {
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			ethernet-port@0 {
-				reg = <0>;
-				label = "lan1";
-				phy-handle = <&phy0>;
-			};
-
-			ethernet-port@1 {
-				reg = <1>;
-				label = "lan2";
-				phy-handle = <&phy1>;
-			};
-
-			ethernet-port@2 {
-				reg = <2>;
-				label = "lan3";
-				phy-handle = <&phy2>;
-			};
-
-			ethernet-port@3 {
-				reg = <3>;
-				label = "lan4";
-				phy-handle = <&phy3>;
-			};
-
-			ethernet-port@4 {
-				reg = <4>;
-				label = "wan";
-				phy-handle = <&phy4>;
-			};
-
-			ethernet-port@7 {
-				reg = <7>;
-				ethernet = <&gmac0>;
-				phy-mode = "rgmii-id";
-				rx-internal-delay-ps = <2000>;
-				tx-internal-delay-ps = <2000>;
-
-				fixed-link {
-					speed = <1000>;
-					full-duplex;
-				};
-			};
-		};
+		/* txdelay, rxdelay, mode, force_mode, txpause, rxpause, link, duplex, speed */
+		/* extif1 = port 6 (SGMII, unused on this board) */
+		realtek,extif1 = <0 0 11 1 1 1 1 1 2>;
+		/* extif2 = port 7 (RGMII, CPU port) */
+		realtek,extif2 = <0 0 1 1 1 1 1 1 2>;
+		status = "okay";
 	};
 };
 

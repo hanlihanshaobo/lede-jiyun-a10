@@ -93,6 +93,60 @@ jobs:
           cd lede
           make -j"$(nproc)" || make -j1 V=s
 
+      - name: Build SPI NOR FIT image (for Rockchip uboot boot_android flow)
+        run: |
+          set -eux
+          sudo apt-get install -y u-boot-tools
+          cd lede
+          KDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
+          DTB="$KDIR/arch/arm64/boot/dts/rockchip/image-rk3568-jiyun-a10.dtb"
+          IMG=$(ls -1 "$KDIR"/Image 2>/dev/null | head -1)
+          test -f "$DTB" || { echo "DTB not found: $DTB"; exit 1; }
+          test -f "$IMG" || { echo "Image not found in $KDIR"; exit 1; }
+          cp "$DTB" /tmp/rockchip.dtb
+          cp "$IMG" /tmp/Image
+          cat > /tmp/jiyun.its <<'ITS'
+          /dts-v1/;
+          / {
+              description = "Jiyun A10 OpenWrt FIT";
+              #address-cells = <1>;
+
+              images {
+                  kernel {
+                      description = "Linux kernel";
+                      data = /incbin/("/tmp/Image");
+                      type = "kernel";
+                      arch = "arm64";
+                      os = "linux";
+                      compression = "none";
+                      load = <0x00280000>;
+                      entry = <0x00280000>;
+                      hash { algo = "sha256"; };
+                  };
+                  fdt {
+                      description = "Device Tree Blob";
+                      data = /incbin/("/tmp/rockchip.dtb");
+                      type = "flat_dt";
+                      arch = "arm64";
+                      compression = "none";
+                      hash { algo = "sha256"; };
+                  };
+              };
+
+              configurations {
+                  default = "conf";
+                  conf {
+                      description = "OpenWrt Jiyun A10";
+                      kernel = "kernel";
+                      fdt = "fdt";
+                      hash { algo = "sha256"; };
+                  };
+              };
+          };
+          ITS
+          mkimage -f /tmp/jiyun.its /tmp/jiyun-a10-openwrt.fit
+          ls -l /tmp/jiyun-a10-openwrt.fit
+
       - name: Collect artifacts
         run: |
           set -eux
@@ -101,6 +155,8 @@ jobs:
             \( -name "*jiyun*" -o -name "*.manifest" -o -name "sha256sums" \
                -o -name "packages.tar" -o -name "*.config" \) \
             -exec cp -v {} output/ \; || true
+          cp -v /tmp/jiyun-a10-openwrt.fit output/ || true
+          cp -v /tmp/rockchip.dtb output/ || true
           ls -al output
 
       - name: Upload firmware

@@ -40,7 +40,14 @@ jobs:
 
       - name: Clone upstream LEDE
         run: |
-          git clone --depth 1 --branch "${LEDE_REF}" "${LEDE_REPO}" lede
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            --branch "${LEDE_REF}" "${LEDE_REPO}" lede
+
+      - name: Update and install feeds
+        run: |
+          cd lede
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: Install build dependencies
         run: |
@@ -75,6 +82,11 @@ jobs:
         run: |
           cd lede
           make download -j"$(nproc)" || make download -j1 V=s
+
+      - name: Build kernel (DTS check)
+        run: |
+          cd lede
+          make target/linux/compile -j"$(nproc)" || make target/linux/compile -j1 V=s
 
       - name: Build
         run: |

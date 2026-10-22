@@ -8,6 +8,21 @@
 #include <dt-bindings/pinctrl/rockchip.h>
 #include "rk3568.dtsi"
 
+/*
+ * Jiyun A10 (吉云 A10) - RK3568B2 + 2GB DDR4
+ *
+ * Reference material:
+ *   - stock Rockchip DTB (reverse/stock_device_tree.dts)  : board wiring
+ *   - NSY G68 Plus (zhoufuli/immortalwrt-rk356x)          : known-good mainline
+ *     port of the very same RK3568 + RTL8367S + 2x MT7916 combination
+ *
+ * Boot layout:
+ *   SPI NOR (32MB)  : Rockchip u-boot + "Kernel" partition holding a FIT
+ *                     (LZMA kernel + DTB). The stock u-boot loads it and
+ *                     hands over to the kernel with root=/dev/mmcblk0p1.
+ *   eMMC            : partition 1 holds the real rootfs (ext4).
+ */
+
 / {
 	model = "Jiyun A10";
 	compatible = "jiyun,a10", "rockchip,rk3568";
@@ -18,7 +33,7 @@
 		serial2 = &uart2;
 	};
 
-	chosen: chosen {
+	chosen {
 		stdout-path = "serial2:1500000n8";
 		bootargs = "console=ttyS2,1500000 root=/dev/mmcblk0p1 rootfstype=ext4 rootwait";
 	};
@@ -52,6 +67,82 @@
 		vin-supply = <&dc_12v>;
 	};
 
+	vcc5v0_usb: regulator-vcc5v0-usb {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_usb";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc5v0_host: regulator-vcc5v0-host {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_host";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_host_en>;
+		vin-supply = <&vcc5v0_usb>;
+	};
+
+	vcc5v0_otg: regulator-vcc5v0-otg {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_otg";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_otg_en>;
+		vin-supply = <&vcc5v0_usb>;
+	};
+
+	vcc1v8_adc: regulator-vcc1v8-adc {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc1v8_adc";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc2v5_ddr: regulator-vcc2v5-ddr {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc2v5-sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <2500000>;
+		regulator-max-microvolt = <2500000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	pcie30_avdd0v9: regulator-pcie30-avdd0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie30_avdd0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	pcie30_avdd1v8: regulator-pcie30-avdd1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie30_avdd1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
 	vcc3v3_pcie: regulator-vcc3v3-pcie {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_pcie";
@@ -59,7 +150,79 @@
 		regulator-boot-on;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc3v3_pcie_en>;
+		startup-delay-us = <5000>;
 		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc3v3_bu: regulator-vcc3v3-bu {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_bu";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	/*
+	 * CPU rail: PWM controlled (RK3568 TRM). Same setup as the stock
+	 * DTB and as the NSY G68 Plus.
+	 */
+	vdd_cpu: vdd-cpu {
+		compatible = "pwm-regulator";
+		rockchip,pwm_id = <0>;
+		rockchip,pwm_voltage = <900000>;
+		pwms = <&pwm0 0 25000 1>;
+		regulator-name = "vdd_cpu";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1400000>;
+		regulator-init-microvolt = <1150000>;
+		regulator-enable-ramp-delay = <300>;
+		regulator-ramp-delay = <8000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		work {
+			label = "work";
+			gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+			pinctrl-names = "default";
+			pinctrl-0 = <&led_work_en>;
+		};
+	};
+
+	/*
+	 * RTL8367S 5-port managed switch, CPU port (7) on RGMII -> gmac0.
+	 * Node format taken from the working NSY G68 Plus (rk3568 + RTL8367S +
+	 * MT7916), which is electrically identical to the Jiyun A10.
+	 * Driver: kmod-switch-rtl8367b (out-of-tree rtl8367b.c, "realtek,rtl8367s")
+	 *
+	 * NOTE: the node has to live at the root level (not below &mdio0) -
+	 * the driver is a platform driver, the MDIO bus is only referenced
+	 * through the "mii-bus" phandle.
+	 */
+	rtlgsw@0 {
+		compatible = "realtek,rtl8367s";
+		realtek,mdio = <&mdio0>;
+		mii-bus = <&mdio0>;
+		realtek,id = <29>;
+		phy-id = <29>;
+		cpu_port = <7>;
+
+		/* txdelay, rxdelay, mode, force_mode, txpause, rxpause, link, duplex, speed */
+		/* extif1 = port 6 (SGMII, unused on this board) */
+		realtek,extif1 = <0 0 11 1 1 1 1 1 2>;
+		/* extif2 = port 7 (RGMII, CPU port) */
+		realtek,extif2 = <0 0 1 1 1 1 1 1 2>;
+		status = "okay";
 	};
 };
 
@@ -84,17 +247,24 @@
 	status = "okay";
 };
 
+&pwm0 {
+	status = "okay";
+};
+
 /*
- * Ethernet: RTL8367S 5-port switch, CPU port on RGMII.
+ * Ethernet: RTL8367S 5-port switch, CPU port (7) on RGMII.
  * NOTE: in mainline the RK3568 MAC named gmac0 is the one at fe2a0000
  *       (the vendor/Rockchip DTB calls it gmac1).
+ * phy-mode must be "rgmii" (not "rgmii-id"): with "rgmii-id" the stmmac
+ * driver drops tx_delay/rx_delay, and the switch does not add any delay
+ * either -> no RGMII timing compensation at 1 Gbit/s.
  */
 &gmac0 {
 	assigned-clocks = <&cru SCLK_GMAC0_RX_TX>, <&cru SCLK_GMAC0>;
 	assigned-clock-parents = <&cru SCLK_GMAC0_RGMII_SPEED>;
 	assigned-clock-rates = <0>, <125000000>;
 	clock_in_out = "output";
-	phy-mode = "rgmii-id";
+	phy-mode = "rgmii";
 	pinctrl-names = "default";
 	pinctrl-0 = <&gmac0_miim
 		     &gmac0_tx_bus2
@@ -111,6 +281,7 @@
 	fixed-link {
 		speed = <1000>;
 		full-duplex;
+		pause;
 	};
 };
 
@@ -120,30 +291,18 @@
 
 &mdio0 {
 	status = "okay";
-
-	/*
-	 * RTL8367S 5-port managed switch, CPU port (7) on RGMII -> gmac0.
-	 * Node format taken from the working NSY G68 Plus (rk3568 + RTL8367S + MT7916),
-	 * which is electrically identical to the Jiyun A10.
-	 * Driver: kmod-switch-rtl8367b (out-of-tree rtl8367b.c, "realtek,rtl8367s")
-	 */
-	rtlgsw@0 {
-		compatible = "realtek,rtl8367s";
-		realtek,mdio = <&mdio0>;
-		mii-bus = <&mdio0>;
-		realtek,id = <29>;
-		phy-id = <29>;
-		cpu_port = <7>;
-
-		/* txdelay, rxdelay, mode, force_mode, txpause, rxpause, link, duplex, speed */
-		/* extif1 = port 6 (SGMII, unused on this board) */
-		realtek,extif1 = <0 0 11 1 1 1 1 1 2>;
-		/* extif2 = port 7 (RGMII, CPU port) */
-		realtek,extif2 = <0 0 1 1 1 1 1 1 2>;
-		status = "okay";
-	};
 };
 
+/*
+ * RK809 PMIC.
+ * The mainline rk8xx regulator driver looks the regulators up by their
+ * *node name* (DCDC_REG1..5, LDO_REG1..9, SWITCH_REG1..2), so the names
+ * must be kept exactly as in the stock DTB. The stock layout is:
+ *   DCDC1=vdd_logic DCDC2=vdd_gpu DCDC3=vcc_ddr DCDC4=vdd_npu DCDC5=vcc_1v8
+ *   LDO1=vdda0v9_image ... LDO5=vccio_sd (eMMC/SD IO) LDO6=vcc3v3_pmu ...
+ *   SWITCH1=vcc_3v3 SWITCH2=vcc3v3_sd
+ * The CPU rail is the PWM regulator above, not a PMIC rail.
+ */
 &i2c0 {
 	status = "okay";
 
@@ -156,6 +315,10 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&pmic_int>;
 		system-power-controller;
+		wakeup-source;
+		clock-output-names = "rk808-clkout1", "rk808-clkout2";
+		pmic-reset-func = <0>;
+		not-save-power-en = <1>;
 		vcc1-supply = <&vcc3v3_sys>;
 		vcc2-supply = <&vcc3v3_sys>;
 		vcc3-supply = <&vcc3v3_sys>;
@@ -165,18 +328,46 @@
 		vcc7-supply = <&vcc3v3_sys>;
 		vcc8-supply = <&vcc3v3_sys>;
 		vcc9-supply = <&vcc3v3_sys>;
-		wakeup-source;
+
+		pwrkey {
+			status = "okay";
+		};
+
+		pinctrl_rk8xx {
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			rk817_slppin_null: rk817_slppin_null {
+				pins = "gpio_slp";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_slp: rk817_slppin_slp {
+				pins = "gpio_slp";
+				function = "pin_fun1";
+			};
+
+			rk817_slppin_pwrdn: rk817_slppin_pwrdn {
+				pins = "gpio_slp";
+				function = "pin_fun2";
+			};
+
+			rk817_slppin_rst: rk817_slppin_rst {
+				pins = "gpio_slp";
+				function = "pin_fun3";
+			};
+		};
 
 		regulators {
-			vdd_cpu: DCDC_REG1 {
-				regulator-name = "vdd_cpu";
+			DCDC_REG1 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-initial-mode = <0x2>;
 				regulator-min-microvolt = <500000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-init-microvolt = <900000>;
 				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_logic";
 
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -184,52 +375,182 @@
 			};
 
 			vdd_gpu: DCDC_REG2 {
-				regulator-name = "vdd_gpu";
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-initial-mode = <0x2>;
 				regulator-min-microvolt = <500000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-init-microvolt = <1000000>;
 				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_gpu";
 
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
 			};
 
-			vcc_ddr: DCDC_REG3 {
-				regulator-name = "vcc_ddr";
+			DCDC_REG3 {
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-initial-mode = <0x2>;
+				regulator-name = "vcc_ddr";
 
 				regulator-state-mem {
 					regulator-on-in-suspend;
 				};
 			};
 
-			vdd_npu: DCDC_REG4 {
-				regulator-name = "vdd_npu";
+			DCDC_REG4 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-initial-mode = <0x2>;
 				regulator-min-microvolt = <500000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-init-microvolt = <1000000>;
 				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_npu";
 
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
 			};
 
-			vcc_1v8: DCDC_REG5 {
-				regulator-name = "vcc_1v8";
+			LDO_REG1 {
+				regulator-boot-on;
+				regulator-always-on;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vdda0v9_image";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			LDO_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vdda_0v9";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			LDO_REG3 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vdda0v9_pmu";
+
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <900000>;
+				};
+			};
+
+			LDO_REG4 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3000000>;
+				regulator-max-microvolt = <3000000>;
+				regulator-name = "vccio_acodec";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vccio_sd: LDO_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vccio_sd";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc3v3_pmu: LDO_REG6 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3_pmu";
+
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
+				};
+			};
+
+			LDO_REG7 {
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca_1v8";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			LDO_REG8 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca1v8_pmu";
+
+				regulator-state-mem {
+					regulator-on-in-suspend;
+				};
+			};
+
+			LDO_REG9 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca1v8_image";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			DCDC_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcc_1v8";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc_3v3: SWITCH_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "vcc_3v3";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc3v3_sd: SWITCH_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "vcc3v3_sd";
 
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -240,9 +561,31 @@
 };
 
 &pinctrl {
+	usb {
+		vcc5v0_host_en: vcc5v0-host-en {
+			rockchip,pins = <0 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		vcc5v0_otg_en: vcc5v0-otg-en {
+			rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	regulator-en {
+		vcc3v3_pcie_en: vcc3v3-pcie-en {
+			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	pmic {
 		pmic_int: pmic-int {
 			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	leds {
+		led_work_en: led_work_en {
+			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };
@@ -252,22 +595,34 @@
  *   fe260000 (pcie2x1) -> MT7916 #1  (mt_drv 0000:01:00.0), combphy2, reset gpio3 PC1
  *   fe270000 (pcie3x1) -> MT7916 #2  (mt_pci_slave 0001:11:00.0), pcie30phy, reset gpio0 PC3
  *   fe280000 (pcie3x2) -> unused, pcie30phy, reset gpio0 PC6
+ *
+ * pcie3x1/pcie3x2 share the pcie30phy and run in "bifurcation" mode
+ * (1 lane each) - the mainline driver expects "data-lanes = <1 2>" for
+ * that, otherwise it falls back to aggregation (4 lanes) and the link
+ * does not come up.
  */
 &pcie2x1 {
+	num-lanes = <1>;
 	reset-gpios = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
 &pcie3x1 {
+	num-lanes = <1>;
 	reset-gpios = <&gpio0 RK_PC3 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
 &pcie3x2 {
+	num-lanes = <1>;
 	reset-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie>;
+	status = "okay";
+};
+
+&combphy0 {
 	status = "okay";
 };
 
@@ -280,26 +635,44 @@
 };
 
 &pcie30phy {
+	data-lanes = <1 2>;
 	status = "okay";
 };
 
 &pmu_io_domains {
+	pmuio1-supply = <&vcc3v3_pmu>;
+	pmuio2-supply = <&vcc3v3_pmu>;
+	vccio1-supply = <&vcc_3v3>;
+	vccio3-supply = <&vcc_3v3>;
+	vccio4-supply = <&vcc_3v3>;
+	vccio5-supply = <&vcc_3v3>;
+	vccio6-supply = <&vcc_3v3>;
+	vccio7-supply = <&vcc_3v3>;
 	status = "okay";
 };
 
 &saradc {
 	status = "okay";
+	vref-supply = <&vcc1v8_adc>;
 };
 
+/*
+ * eMMC (BWZT85). The mainline sdhci-of-dwcmshc driver brings its own
+ * pinctrl for the RK3568, so only the mmc properties are needed here.
+ */
 &sdhci {
 	bus-width = <8>;
+	cap-mmc-highspeed;
 	max-frequency = <200000000>;
-	cap-sd-highspeed;
 	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd &emmc_datastrobe>;
 	status = "okay";
 };
 
 &tsadc {
+	rockchip,hw-tshut-mode = <1>;
+	rockchip,hw-tshut-polarity = <0>;
 	status = "okay";
 };
 
@@ -308,10 +681,28 @@
 };
 
 &usb_host0_xhci {
+	dr_mode = "host";
 	status = "okay";
 };
 
 &usb_host1_xhci {
+	dr_mode = "host";
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&usb_host1_ehci {
+	status = "okay";
+};
+
+&usb_host1_ohci {
 	status = "okay";
 };
 
@@ -320,10 +711,12 @@
 };
 
 &usb2phy0_host {
+	phy-supply = <&vcc5v0_host>;
 	status = "okay";
 };
 
 &usb2phy0_otg {
+	phy-supply = <&vcc5v0_otg>;
 	status = "okay";
 };
 
@@ -332,9 +725,11 @@
 };
 
 &usb2phy1_host {
+	phy-supply = <&vcc5v0_host>;
 	status = "okay";
 };
 
 &usb2phy1_otg {
+	phy-supply = <&vcc5v0_host>;
 	status = "okay";
 };

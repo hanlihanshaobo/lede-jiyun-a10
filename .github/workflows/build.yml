@@ -43,6 +43,17 @@ jobs:
           git clone --depth 1 --recurse-submodules --shallow-submodules \
             --branch "${LEDE_REF}" "${LEDE_REPO}" lede
 
+      - name: Cache LEDE build tree
+        uses: actions/cache@v4
+        with:
+          path: |
+            lede/build_dir
+            lede/staging_dir
+            lede/dl
+          key: jiyun-a10-lede-${{ github.run_id }}
+          restore-keys: |
+            jiyun-a10-lede-
+
       - name: Update and install feeds
         run: |
           cd lede
@@ -121,10 +132,12 @@ jobs:
           cd lede
           KDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
           ROOTDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8 | head -1)
-          DTB="$KDIR/arch/arm64/boot/dts/rockchip/image-rk3568-jiyun-a10.dtb"
+          # the image step exports the device dtb as $KDIR/image-<dts>.dtb
+          DTB=$(find "$KDIR" -maxdepth 2 -name "image-rk3568-jiyun-a10.dtb" | head -1)
+          [ -n "$DTB" ] || DTB=$(find "$KDIR" -name "*jiyun*.dtb" | head -1)
           IMG="$KDIR/Image"
-          test -f "$DTB" || { echo "DTB not found: $DTB"; exit 1; }
-          test -f "$IMG" || { echo "Image not found: $IMG"; exit 1; }
+          test -f "$DTB" || { echo "DTB not found under $KDIR:"; ls -la "$KDIR" | head -30; exit 1; }
+          test -f "$IMG" || { echo "Image not found: $IMG"; ls -la "$KDIR" | head -30; exit 1; }
           cp "$DTB" /tmp/rockchip.dtb
           cp "$IMG" /tmp/Image
 

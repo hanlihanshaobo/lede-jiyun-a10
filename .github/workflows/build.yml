@@ -86,6 +86,7 @@ jobs:
       - name: Build kernel (DTS check)
         run: |
           cd lede
+          make toolchain -j"$(nproc)" || make toolchain -j1 V=s
           make target/linux/compile -j"$(nproc)" || make target/linux/compile -j1 V=s
 
       - name: Build

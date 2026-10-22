@@ -118,7 +118,6 @@ jobs:
       - name: Build SPI NOR bootstrap FIT (Rockchip uboot boot_android flow)
         run: |
           set -eux
-          sudo apt-get install -y u-boot-tools device-tree-compiler
           cd lede
           KDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
           ROOTDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8 | head -1)
@@ -129,63 +128,22 @@ jobs:
           cp "$DTB" /tmp/rockchip.dtb
           cp "$IMG" /tmp/Image
 
-          # ---- LZMA-compress the kernel, same as the original stock FIT ----
-          lzma -9 -c /tmp/Image > /tmp/Image.lzma
-          ls -l /tmp/Image /tmp/Image.lzma
-
-          # ---- FIT: kernel + device tree only.
-          #      The real system lives on the eMMC (root=/dev/mmcblk0p1),
-          #      the SPI NOR only bootstraps it.
-          #      load/entry use the Rockchip placeholder values which the
-          #      stock u-boot resolves exactly like for the original kernel.
-          cat > /tmp/jiyun.its <<'ITS'
-          /dts-v1/;
-          / {
-              description = "Jiyun A10 OpenWrt bootstrap FIT";
-              #address-cells = <1>;
-
-              images {
-                  kernel {
-                      description = "Linux kernel";
-                      data = /incbin/("/tmp/Image.lzma");
-                      type = "kernel";
-                      arch = "arm64";
-                      os = "linux";
-                      compression = "lzma";
-                      entry = <0xffffff01>;
-                      load = <0xffffff01>;
-                      hash { algo = "sha256"; };
-                  };
-                  fdt {
-                      description = "Device Tree Blob";
-                      data = /incbin/("/tmp/rockchip.dtb");
-                      type = "flat_dt";
-                      arch = "arm64";
-                      compression = "none";
-                      load = <0xffffff00>;
-                      hash { algo = "sha256"; };
-                  };
-              };
-
-              configurations {
-                  default = "conf";
-                  conf {
-                      description = "OpenWrt Jiyun A10 bootstrap";
-                      kernel = "kernel";
-                      fdt = "fdt";
-                      hash { algo = "sha256"; };
-                  };
-              };
-          };
-          ITS
-          mkimage -f /tmp/jiyun.its /tmp/jiyun-a10-openwrt.fit
-          ls -l /tmp/jiyun-a10-openwrt.fit
+          # Build the FIT by patching the *stock* FIT header (same property
+          # layout, only sizes/hashes/positions change).
+          #
+          # NOTE: do NOT use "mkimage -E": it emits the new "data-offset"
+          # property, while the stock Rockchip SDK u-boot of this router
+          # (2017.09-dirty) only understands the old "data-position" one -
+          # it would fail with "Could not find kernel subimage data!".
+          python3 ../tools/mkfit.py ../files/stock_fit_header.bin \
+            /tmp/Image /tmp/rockchip.dtb /tmp/jiyun-a10-openwrt.fit
           dumpimage -l /tmp/jiyun-a10-openwrt.fit || true
 
           # ---- the real rootfs, to be written to the eMMC ----
           ls -l "$ROOTDIR"/root.ext4 || true
           cp "$ROOTDIR"/root.ext4 /tmp/root.ext4
           ls -l /tmp/root.ext4
+
 
       - name: Collect artifacts
         run: |
@@ -198,6 +156,8 @@ jobs:
           cp -v /tmp/jiyun-a10-openwrt.fit output/ || true
           cp -v /tmp/rockchip.dtb output/ || true
           cp -v /tmp/root.ext4 output/ || true
+          # keep the raw kernel too, so the FIT can be rebuilt locally
+          cp -v /tmp/Image output/kernel-Image || true
           ls -al output
 
       - name: Upload firmware

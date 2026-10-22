@@ -81,6 +81,9 @@ jobs:
           mkdir -p "$PHY_DIR" "$INC_DIR" "$BP_DIR"
           cp kernel/files/drivers/net/phy/rtl8367.c "$PHY_DIR/"
           cp kernel/files/drivers/net/phy/rtl8367b.c "$PHY_DIR/"
+          # rtl8366_smi needs the rwbts/rdbt helpers used by the RTL8367S driver
+          cp kernel/files/drivers/net/phy/rtl8366_smi.c "$PHY_DIR/"
+          cp kernel/files/drivers/net/phy/rtl8366_smi.h "$PHY_DIR/"
           cp kernel/files/include/linux/rtl8367.h "$INC_DIR/"
           cp kernel/backport-6.18/900-net-phy-add-rtl8367s.patch "$BP_DIR/"
           grep -n "rtl8367" "$PHY_DIR/Makefile" || true

@@ -1276,3 +1276,432 @@ int rtl8366_sw_get_vlan_info(struct switch_dev *dev,
 
 	val->value.s = buf;
 	val->len = len;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_get_vlan_info);
+
+int rtl8366_sw_get_vlan_ports(struct switch_dev *dev, struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	struct switch_port *port;
+	struct rtl8366_vlan_4k vlan4k;
+	int i;
+
+	if (!smi->ops->is_vlan_valid(smi, val->port_vlan))
+		return -EINVAL;
+
+	smi->ops->get_vlan_4k(smi, val->port_vlan, &vlan4k);
+
+	port = &val->value.ports[0];
+	val->len = 0;
+	for (i = 0; i < smi->num_ports; i++) {
+		if (!(vlan4k.member & BIT(i)))
+			continue;
+
+		port->id = i;
+		port->flags = (vlan4k.untag & BIT(i)) ?
+					0 : BIT(SWITCH_PORT_FLAG_TAGGED);
+		val->len++;
+		port++;
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_get_vlan_ports);
+
+int rtl8366_sw_set_vlan_ports(struct switch_dev *dev, struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	struct switch_port *port;
+	u32 member = 0;
+	u32 untag = 0;
+	int err;
+	int i;
+
+	if (!smi->ops->is_vlan_valid(smi, val->port_vlan))
+		return -EINVAL;
+
+	port = &val->value.ports[0];
+	for (i = 0; i < val->len; i++, port++) {
+		int pvid = 0;
+		member |= BIT(port->id);
+
+		if (!(port->flags & BIT(SWITCH_PORT_FLAG_TAGGED)))
+			untag |= BIT(port->id);
+
+		/*
+		 * To ensure that we have a valid MC entry for this VLAN,
+		 * initialize the port VLAN ID here.
+		 */
+		err = rtl8366_get_pvid(smi, port->id, &pvid);
+		if (err < 0)
+			return err;
+		if (pvid == 0) {
+			err = rtl8366_set_pvid(smi, port->id, val->port_vlan);
+			if (err < 0)
+				return err;
+		}
+	}
+
+	return rtl8366_set_vlan(smi, val->port_vlan, member, untag, 0);
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_set_vlan_ports);
+
+int rtl8366_sw_get_vlan_fid(struct switch_dev *dev,
+			    const struct switch_attr *attr,
+			    struct switch_val *val)
+{
+	struct rtl8366_vlan_4k vlan4k;
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+
+	if (!smi->ops->is_vlan_valid(smi, val->port_vlan))
+		return -EINVAL;
+
+	err = smi->ops->get_vlan_4k(smi, val->port_vlan, &vlan4k);
+	if (err)
+		return err;
+
+	val->value.i = vlan4k.fid;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_get_vlan_fid);
+
+int rtl8366_sw_set_vlan_fid(struct switch_dev *dev,
+			    const struct switch_attr *attr,
+			    struct switch_val *val)
+{
+	struct rtl8366_vlan_4k vlan4k;
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+
+	if (!smi->ops->is_vlan_valid(smi, val->port_vlan))
+		return -EINVAL;
+
+	if (val->value.i < 0 || val->value.i > attr->max)
+		return -EINVAL;
+
+	err = smi->ops->get_vlan_4k(smi, val->port_vlan, &vlan4k);
+	if (err)
+		return err;
+
+	return rtl8366_set_vlan(smi, val->port_vlan,
+				vlan4k.member,
+				vlan4k.untag,
+				val->value.i);
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_set_vlan_fid);
+
+int rtl8366_sw_get_vlan_enable(struct switch_dev *dev,
+			       const struct switch_attr *attr,
+			       struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+
+	if (attr->ofs > 2)
+		return -EINVAL;
+
+	if (attr->ofs == 1)
+		val->value.i = smi->vlan_enabled;
+	else
+		val->value.i = smi->vlan4k_enabled;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_get_vlan_enable);
+
+int rtl8366_sw_set_vlan_enable(struct switch_dev *dev,
+			       const struct switch_attr *attr,
+			       struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+
+	if (attr->ofs > 2)
+		return -EINVAL;
+
+	if (attr->ofs == 1)
+		err = rtl8366_smi_enable_vlan(smi, val->value.i);
+	else
+		err = rtl8366_smi_enable_vlan4k(smi, val->value.i);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(rtl8366_sw_set_vlan_enable);
+
+struct rtl8366_smi *rtl8366_smi_alloc(struct device *parent)
+{
+	struct rtl8366_smi *smi;
+
+	BUG_ON(!parent);
+
+	smi = kzalloc(sizeof(*smi), GFP_KERNEL);
+	if (!smi) {
+		dev_err(parent, "no memory for private data\n");
+		return NULL;
+	}
+
+	smi->parent = parent;
+	return smi;
+}
+EXPORT_SYMBOL_GPL(rtl8366_smi_alloc);
+
+static int __rtl8366_smi_init(struct rtl8366_smi *smi, const char *name)
+{
+	int err;
+
+	if (!smi->ext_mbus) {
+		err = gpio_request(smi->gpio_sda, name);
+		if (err) {
+			printk(KERN_ERR "rtl8366_smi: gpio_request failed for %u, err=%d\n",
+				smi->gpio_sda, err);
+			goto err_out;
+		}
+
+		err = gpio_request(smi->gpio_sck, name);
+		if (err) {
+			printk(KERN_ERR "rtl8366_smi: gpio_request failed for %u, err=%d\n",
+				smi->gpio_sck, err);
+			goto err_free_sda;
+		}
+	}
+
+	spin_lock_init(&smi->lock);
+
+	/* start the switch */
+	if (smi->hw_reset) {
+		smi->hw_reset(smi, false);
+		msleep(RTL8366_SMI_HW_START_DELAY);
+	}
+
+	return 0;
+
+ err_free_sda:
+	gpio_free(smi->gpio_sda);
+ err_out:
+	return err;
+}
+
+static void __rtl8366_smi_cleanup(struct rtl8366_smi *smi)
+{
+	if (smi->hw_reset)
+		smi->hw_reset(smi, true);
+
+	if (!smi->ext_mbus) {
+		gpio_free(smi->gpio_sck);
+		gpio_free(smi->gpio_sda);
+	}
+}
+
+enum rtl8366_type rtl8366_smi_detect(struct rtl8366_platform_data *pdata)
+{
+	static struct rtl8366_smi smi;
+	enum rtl8366_type type = RTL8366_TYPE_UNKNOWN;
+	u32 reg = 0;
+
+	memset(&smi, 0, sizeof(smi));
+	smi.gpio_sda = pdata->gpio_sda;
+	smi.gpio_sck = pdata->gpio_sck;
+	smi.clk_delay = 10;
+	smi.cmd_read  = 0xa9;
+	smi.cmd_write = 0xa8;
+
+	if (__rtl8366_smi_init(&smi, "rtl8366"))
+		goto out;
+
+	if (rtl8366_smi_read_reg(&smi, 0x5c, &reg))
+		goto cleanup;
+
+	switch(reg) {
+	case 0x6027:
+		printk("Found an RTL8366S switch\n");
+		type = RTL8366_TYPE_S;
+		break;
+	case 0x5937:
+		printk("Found an RTL8366RB switch\n");
+		type = RTL8366_TYPE_RB;
+		break;
+	default:
+		printk("Found an Unknown RTL8366 switch (id=0x%04x)\n", reg);
+		break;
+	}
+
+cleanup:
+	__rtl8366_smi_cleanup(&smi);
+out:
+	return type;
+}
+
+int rtl8366_smi_init(struct rtl8366_smi *smi)
+{
+	int err;
+
+	if (!smi->ops)
+		return -EINVAL;
+
+	err = __rtl8366_smi_init(smi, dev_name(smi->parent));
+	if (err)
+		goto err_out;
+
+	if (!smi->ext_mbus)
+		dev_info(smi->parent, "using GPIO pins %u (SDA) and %u (SCK)\n",
+			 smi->gpio_sda, smi->gpio_sck);
+	else
+		dev_info(smi->parent, "using MDIO bus '%s'\n", smi->ext_mbus->name);
+
+	err = smi->ops->detect(smi);
+	if (err) {
+		dev_err(smi->parent, "chip detection failed, err=%d\n", err);
+		goto err_free_sck;
+	}
+
+	err = rtl8366_reset(smi);
+	if (err)
+		goto err_free_sck;
+
+	err = smi->ops->setup(smi);
+	if (err) {
+		dev_err(smi->parent, "chip setup failed, err=%d\n", err);
+		goto err_free_sck;
+	}
+
+	err = rtl8366_init_vlan(smi);
+	if (err) {
+		dev_err(smi->parent, "VLAN initialization failed, err=%d\n",
+			err);
+		goto err_free_sck;
+	}
+
+	err = rtl8366_smi_enable_all_ports(smi, 1);
+	if (err)
+		goto err_free_sck;
+
+	err = rtl8366_smi_mii_init(smi);
+	if (err)
+		goto err_free_sck;
+
+	rtl8366_debugfs_init(smi);
+
+	return 0;
+
+ err_free_sck:
+	__rtl8366_smi_cleanup(smi);
+ err_out:
+	return err;
+}
+EXPORT_SYMBOL_GPL(rtl8366_smi_init);
+
+void rtl8366_smi_cleanup(struct rtl8366_smi *smi)
+{
+	rtl8366_debugfs_remove(smi);
+	rtl8366_smi_mii_cleanup(smi);
+	__rtl8366_smi_cleanup(smi);
+}
+EXPORT_SYMBOL_GPL(rtl8366_smi_cleanup);
+
+#ifdef CONFIG_OF
+static void rtl8366_smi_reset(struct rtl8366_smi *smi, bool active)
+{
+	if (active)
+		reset_control_assert(smi->reset);
+	else
+		reset_control_deassert(smi->reset);
+}
+
+int rtl8366_smi_probe_of(struct platform_device *pdev, struct rtl8366_smi *smi)
+{
+	int sck = of_get_named_gpio(pdev->dev.of_node, "gpio-sck", 0);
+	int sda = of_get_named_gpio(pdev->dev.of_node, "gpio-sda", 0);
+	struct device_node *np = pdev->dev.of_node;
+	struct device_node *mdio_node;
+
+	mdio_node = of_parse_phandle(np, "mii-bus", 0);
+	if (!mdio_node) {
+		dev_err(&pdev->dev, "cannot find mdio node phandle");
+		goto try_gpio;
+	}
+
+	smi->ext_mbus = of_mdio_find_bus(mdio_node);
+	if (!smi->ext_mbus) {
+		dev_info(&pdev->dev,
+			"cannot find mdio bus from bus handle (yet)");
+		goto try_gpio;
+	}
+
+	if (of_property_read_u32(np, "phy-id", &smi->phy_id))
+		smi->phy_id = MDC_REALTEK_PHY_ADDR;
+
+	return 0;
+
+try_gpio:
+	if (!gpio_is_valid(sck) || !gpio_is_valid(sda)) {
+		if (!mdio_node) {
+			dev_err(&pdev->dev, "gpios missing in devictree\n");
+			return -EINVAL;
+		} else {
+			return -EPROBE_DEFER;
+		}
+	}
+
+	smi->gpio_sda = sda;
+	smi->gpio_sck = sck;
+	smi->reset = devm_reset_control_get(&pdev->dev, "switch");
+	if (!IS_ERR(smi->reset))
+		smi->hw_reset = rtl8366_smi_reset;
+
+	return 0;
+}
+#else
+static inline int rtl8366_smi_probe_of(struct platform_device *pdev, struct rtl8366_smi *smi)
+{
+	return -ENODEV;
+}
+#endif
+
+int rtl8366_smi_probe_plat(struct platform_device *pdev, struct rtl8366_smi *smi)
+{
+	struct rtl8366_platform_data *pdata = pdev->dev.platform_data;
+
+	if (!pdev->dev.platform_data) {
+		dev_err(&pdev->dev, "no platform data specified\n");
+		return -EINVAL;
+	}
+
+	smi->gpio_sda = pdata->gpio_sda;
+	smi->gpio_sck = pdata->gpio_sck;
+	smi->hw_reset = pdata->hw_reset;
+	smi->phy_id = MDC_REALTEK_PHY_ADDR;
+
+	return 0;
+}
+
+
+struct rtl8366_smi *rtl8366_smi_probe(struct platform_device *pdev)
+{
+	struct rtl8366_smi *smi;
+	int err;
+
+	smi = rtl8366_smi_alloc(&pdev->dev);
+	if (!smi)
+		return NULL;
+
+	if (pdev->dev.of_node)
+		err = rtl8366_smi_probe_of(pdev, smi);
+	else
+		err = rtl8366_smi_probe_plat(pdev, smi);
+
+	if (err)
+		goto free_smi;
+
+	return smi;
+
+free_smi:
+	kfree(smi);
+	return ERR_PTR(err);
+}
+EXPORT_SYMBOL_GPL(rtl8366_smi_probe);
+
+MODULE_DESCRIPTION("Realtek RTL8366 SMI interface driver");
+MODULE_AUTHOR("Gabor Juhos <juhosg@openwrt.org>");
+MODULE_LICENSE("GPL v2");

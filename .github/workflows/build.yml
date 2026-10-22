@@ -94,18 +94,49 @@ jobs:
           cd lede
           make -j"$(nproc)" || make -j1 V=s
 
-      - name: Build SPI NOR FIT image (for Rockchip uboot boot_android flow)
+      - name: Build SPI NOR FIT image (Rockchip uboot boot_android flow)
         run: |
           set -eux
-          sudo apt-get install -y u-boot-tools
+          sudo apt-get install -y u-boot-tools device-tree-compiler
           cd lede
           KDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
+          TGT=$(ls -d staging_dir/target-aarch64_generic_musl | head -1)
           DTB="$KDIR/arch/arm64/boot/dts/rockchip/image-rk3568-jiyun-a10.dtb"
-          IMG=$(ls -1 "$KDIR"/Image 2>/dev/null | head -1)
+          IMG="$KDIR/Image"
           test -f "$DTB" || { echo "DTB not found: $DTB"; exit 1; }
-          test -f "$IMG" || { echo "Image not found in $KDIR"; exit 1; }
+          test -f "$IMG" || { echo "Image not found: $IMG"; exit 1; }
           cp "$DTB" /tmp/rockchip.dtb
           cp "$IMG" /tmp/Image
+
+          # ---- bootargs for stage 1 (initramfs provides the rootfs) ----
+          fdtput -t s /tmp/rockchip.dtb /chosen bootargs "console=ttyS2,1500000 earlycon=pl011,0xfe660000"
+
+          # ---- LZMA-compress the kernel, same as the original stock FIT ----
+          lzma -9 -c /tmp/Image > /tmp/Image.lzma
+          ls -l /tmp/Image /tmp/Image.lzma
+
+          # ---- stage 1: minimal busybox initramfs (small enough to fit the
+          #      27 MB "Kernel" partition together with the LZMA kernel) ----
+          rm -rf /tmp/s1
+          mkdir -p /tmp/s1/bin /tmp/s1/dev /tmp/s1/proc /tmp/s1/sys /tmp/s1/lib /tmp/s1/tmp /tmp/s1/etc
+          cp "$TGT"/bin/busybox /tmp/s1/bin/busybox
+          cp "$TGT"/lib/ld-musl-aarch64.so.1 /tmp/s1/lib/ 2>/dev/null || true
+          cat > /tmp/s1/init <<'INIT'
+          #!/bin/busybox sh
+          /bin/busybox --install -s /bin
+          mount -t proc proc /proc 2>/dev/null
+          mount -t sysfs sysfs /sys 2>/dev/null
+          mount -t devtmpfs devtmpfs /dev 2>/dev/null
+          echo "=== Jiyun A10 OpenWrt stage-1 initramfs ==="
+          echo "=== type 'exit' to power off ==="
+          exec /bin/busybox sh
+          INIT
+          chmod +x /tmp/s1/init
+          ( cd /tmp/s1 && find . -print0 | cpio --null -o -H newc --owner=0:0 2>/dev/null | gzip -9 > /tmp/initramfs.gz )
+          ls -l /tmp/initramfs.gz
+
+          # ---- FIT (Rockchip placeholder load addresses, resolved by the
+          #      stock u-boot exactly like it does for the original kernel) ----
           cat > /tmp/jiyun.its <<'ITS'
           /dts-v1/;
           / {
@@ -115,13 +146,13 @@ jobs:
               images {
                   kernel {
                       description = "Linux kernel";
-                      data = /incbin/("/tmp/Image");
+                      data = /incbin/("/tmp/Image.lzma");
                       type = "kernel";
                       arch = "arm64";
                       os = "linux";
-                      compression = "none";
-                      load = <0x00280000>;
-                      entry = <0x00280000>;
+                      compression = "lzma";
+                      entry = <0xffffff01>;
+                      load = <0xffffff01>;
                       hash { algo = "sha256"; };
                   };
                   fdt {
@@ -130,6 +161,17 @@ jobs:
                       type = "flat_dt";
                       arch = "arm64";
                       compression = "none";
+                      load = <0xffffff00>;
+                      hash { algo = "sha256"; };
+                  };
+                  ramdisk {
+                      description = "OpenWrt stage-1 initramfs";
+                      data = /incbin/("/tmp/initramfs.gz");
+                      type = "ramdisk";
+                      arch = "arm64";
+                      os = "linux";
+                      compression = "gzip";
+                      load = <0xffffff02>;
                       hash { algo = "sha256"; };
                   };
               };
@@ -137,9 +179,10 @@ jobs:
               configurations {
                   default = "conf";
                   conf {
-                      description = "OpenWrt Jiyun A10";
+                      description = "OpenWrt Jiyun A10 stage-1";
                       kernel = "kernel";
                       fdt = "fdt";
+                      ramdisk = "ramdisk";
                       hash { algo = "sha256"; };
                   };
               };
@@ -147,6 +190,7 @@ jobs:
           ITS
           mkimage -f /tmp/jiyun.its /tmp/jiyun-a10-openwrt.fit
           ls -l /tmp/jiyun-a10-openwrt.fit
+          dumpimage -l /tmp/jiyun-a10-openwrt.fit || true
 
       - name: Collect artifacts
         run: |

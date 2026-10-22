@@ -25,6 +25,11 @@ env:
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'master' }}
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Job 1: compile everything (toolchain + kernel + image).  Uploads the raw
+  # pieces (kernel Image, device dtb, root.ext4, sysupgrade.img.gz) so the
+  # FIT assembly below can run/fail/re-run independently of this slow job.
+  # -------------------------------------------------------------------------
   build:
     runs-on: ubuntu-22.04
     steps:
@@ -126,21 +131,60 @@ jobs:
           cd lede
           make -j"$(nproc)" || make -j1 V=s
 
-      - name: Build SPI NOR bootstrap FIT (Rockchip uboot boot_android flow)
+      - name: Collect build output
         run: |
           set -eux
-          cd lede
-          KDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
-          ROOTDIR=$(ls -d build_dir/target-*/linux-rockchip_armv8 | head -1)
-          # the device dtb is exported to KERNEL_BUILD_DIR (= $ROOTDIR) as
-          # image-<dts>.dtb; the kernel Image lives in LINUX_DIR (= $KDIR)
+          mkdir -p output
+          KDIR=$(ls -d lede/build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
+          ROOTDIR=$(ls -d lede/build_dir/target-*/linux-rockchip_armv8 | head -1)
           DTB=$(find "$ROOTDIR" -maxdepth 1 -name "image-rk3568-jiyun-a10.dtb" | head -1)
           [ -n "$DTB" ] || DTB=$(find "$ROOTDIR" -maxdepth 1 -name "*jiyun*.dtb" | head -1)
-          IMG="$KDIR/Image"
-          test -f "$DTB" || { echo "DTB not found under $ROOTDIR:"; ls -la "$ROOTDIR" | head -30; exit 1; }
-          test -f "$IMG" || { echo "Image not found: $IMG"; ls -la "$KDIR" | head -30; exit 1; }
-          cp "$DTB" /tmp/rockchip.dtb
-          cp "$IMG" /tmp/Image
+          test -f "$DTB" || { echo "DTB not found under $ROOTDIR:"; ls -la "$ROOTDIR" | head; exit 1; }
+          test -f "$KDIR/Image" || { echo "Image not found under $KDIR"; exit 1; }
+          test -f "$ROOTDIR/root.ext4" || { echo "root.ext4 not found under $ROOTDIR"; exit 1; }
+          cp -v "$DTB" output/rockchip.dtb
+          cp -v "$KDIR/Image" output/Image
+          cp -v "$ROOTDIR/root.ext4" output/root.ext4
+          find lede/bin/targets -type f \
+            \( -name "*jiyun*" -o -name "*.manifest" -o -name "sha256sums" \
+               -o -name "packages.tar" -o -name "*.config" \) \
+            -exec cp -v {} output/ \; || true
+          ls -al output
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: output
+          retention-days: 30
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # Job 2: assemble the SPI NOR bootstrap FIT from the build output.  This is
+  # deliberately split out so that a FIT bug only needs this (fast) job to be
+  # re-run, instead of the whole 1.5 h build.
+  # -------------------------------------------------------------------------
+  assemble:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout build recipes
+        uses: actions/checkout@v4
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: output
+
+      - name: Assemble SPI NOR bootstrap FIT
+        run: |
+          set -eux
+          test -f output/Image || { echo "Image missing"; exit 1; }
+          test -f output/rockchip.dtb || { echo "dtb missing"; exit 1; }
+          test -f output/root.ext4 || { echo "root.ext4 missing"; exit 1; }
+          cp output/Image /tmp/Image
+          cp output/rockchip.dtb /tmp/rockchip.dtb
 
           # Build the FIT by patching the *stock* FIT header (same property
           # layout, only sizes/hashes/positions change).
@@ -149,35 +193,17 @@ jobs:
           # property, while the stock Rockchip SDK u-boot of this router
           # (2017.09-dirty) only understands the old "data-position" one -
           # it would fail with "Could not find kernel subimage data!".
-          python3 ../tools/mkfit.py ../files/stock_fit_header.bin \
-            /tmp/Image /tmp/rockchip.dtb /tmp/jiyun-a10-openwrt.fit
-          dumpimage -l /tmp/jiyun-a10-openwrt.fit || true
-
-          # ---- the real rootfs, to be written to the eMMC ----
-          ls -l "$ROOTDIR"/root.ext4 || true
-          cp "$ROOTDIR"/root.ext4 /tmp/root.ext4
-          ls -l /tmp/root.ext4
-
-
-      - name: Collect artifacts
-        run: |
-          set -eux
-          mkdir -p output
-          find lede/bin/targets -type f \
-            \( -name "*jiyun*" -o -name "*.manifest" -o -name "sha256sums" \
-               -o -name "packages.tar" -o -name "*.config" \) \
-            -exec cp -v {} output/ \; || true
-          cp -v /tmp/jiyun-a10-openwrt.fit output/ || true
-          cp -v /tmp/rockchip.dtb output/ || true
-          cp -v /tmp/root.ext4 output/ || true
-          # keep the raw kernel too, so the FIT can be rebuilt locally
-          cp -v /tmp/Image output/kernel-Image || true
-          ls -al output
+          python3 tools/mkfit.py files/stock_fit_header.bin \
+            /tmp/Image /tmp/rockchip.dtb output/jiyun-a10-openwrt.fit
+          ls -l output/jiyun-a10-openwrt.fit
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: jiyun-a10-openwrt
-          path: output
+          path: |
+            output/jiyun-a10-openwrt.fit
+            output/rockchip.dtb
+            output/root.ext4
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error

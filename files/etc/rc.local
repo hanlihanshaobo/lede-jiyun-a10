@@ -1,0 +1,5 @@
+#!/bin/sh
+# Per-unit WLAN MACs (must run after the first-boot "wifi config").
+sh /etc/jiyun-mac.sh 2>/dev/null
+
+exit 0

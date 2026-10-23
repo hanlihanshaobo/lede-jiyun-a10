@@ -49,18 +49,19 @@ set network.wan.device='wan'
 set network.wan.proto='dhcp'
 set network.wan.macaddr='$WAN_MAC'
 
+# DSA user ports ignore the interface macaddr; a device section does work.
+delete network.dev_wan
+set network.dev_wan='device'
+set network.dev_wan.name='wan'
+set network.dev_wan.macaddr='$WAN_MAC'
+
 # --- CPU port (DSA conduit) --------------------------------------------
 delete network.dev_eth0
 set network.dev_eth0='device'
 set network.dev_eth0.name='eth0'
 set network.dev_eth0.macaddr='$BASE'
 
-# --- wireless -----------------------------------------------------------
-set wireless.default_radio0.macaddr='$WL24_MAC'
-set wireless.default_radio1.macaddr='$WL5_MAC'
-
 commit network
-commit wireless
 EOF
 
 exit 0

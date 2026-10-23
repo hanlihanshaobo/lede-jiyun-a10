@@ -256,6 +256,16 @@
 	tx_delay = <0x3c>;
 	rx_delay = <0x2f>;
 	status = "okay";
+
+	/*
+	 * The MAC still needs its own fixed link: DSA attaches the switch's CPU
+	 * port to this netdev (conduit) and the stmmac probe fails with
+	 * "no phy found" without it.
+	 */
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+	};
 };
 
 &gmac1 {

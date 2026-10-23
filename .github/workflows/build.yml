@@ -13,6 +13,9 @@ on:
         default: "master"
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   schedule:
     - cron: "0 18 * * 5"
 
@@ -116,9 +119,15 @@ jobs:
           cp files/99-jiyun-net "$UCI_DIR/99-jiyun-net"
           chmod +x "$UCI_DIR/99-jiyun-net"
 
+          # Per-unit WLAN MACs: the first-boot "wifi config" (S18fanctrl)
+          # rewrites /etc/config/wireless, so uci-defaults is too early -
+          # rc.local runs at the very end of boot and applies them.
+          cp files/etc/jiyun-mac.sh lede/target/linux/rockchip/base-files/etc/jiyun-mac.sh
+          cp files/etc/rc.local     lede/target/linux/rockchip/base-files/etc/rc.local
+
           # MT7916 needs an EEPROM blob; without it mt7915 probe fails and no
-          # wlan phy is registered. Use the generic 4 KiB one from the
-          # zhoufuli/immortalwrt-rk356x tree (same RK3568+MT7916 hardware).
+          # wlan phy is registered. This is the ART/Factory copy - the only
+          # variant that declares 2.4G+5G (see the porting notes).
           FW_DIR=lede/target/linux/rockchip/base-files/lib/firmware/mediatek
           mkdir -p "$FW_DIR"
           cp files/mt7916_eeprom.bin "$FW_DIR/mt7916_eeprom.bin"

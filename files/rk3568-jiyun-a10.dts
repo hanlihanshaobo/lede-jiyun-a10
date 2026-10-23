@@ -668,6 +668,11 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd &emmc_datastrobe>;
 	status = "okay";
+
+	mmc@0 {
+		compatible = "mmc-card";
+		reg = <0>;
+	};
 };
 
 &tsadc {

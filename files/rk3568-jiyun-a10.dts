@@ -255,16 +255,7 @@
 		     &gmac0_rgmii_bus>;
 	tx_delay = <0x3c>;
 	rx_delay = <0x2f>;
-	snps,reset-gpio = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
-	snps,reset-active-low;
-	snps,reset-delays-us = <0 20000 100000>;
 	status = "okay";
-
-	fixed-link {
-		speed = <1000>;
-		full-duplex;
-		pause;
-	};
 };
 
 &gmac1 {
@@ -277,6 +268,7 @@
 	rtl8367s: switch@1d {
 		compatible = "realtek,rtl8365mb";
 		reg = <0x1d>;
+		reset-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
 
 		ports {
 			#address-cells = <1>;
@@ -311,6 +303,11 @@
 				label = "cpu";
 				ethernet = <&gmac0>;
 				phy-mode = "rgmii";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
 			};
 		};
 

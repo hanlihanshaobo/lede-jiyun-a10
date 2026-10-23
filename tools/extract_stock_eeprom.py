@@ -24,6 +24,12 @@ This script prefers the populated one (more non-zero bytes).
 
 Usage:
     extract_stock_eeprom.py <spi_nor_backup.bin> <out.bin>
+    extract_stock_eeprom.py --ko <mt_wifi.ko>    <out.bin>
+
+The --ko form only needs the 14 MiB mt_wifi.ko from the stock initramfs (the
+EEPROM is an array inside it); use it when you do not have the whole SPI NOR
+backup.  Note that this file is identical for every A10 - the MAC addresses
+are NOT in it, those live in the WayOS config partition (Config_new).
 """
 
 import lzma
@@ -87,7 +93,30 @@ def cpio_find(cpio, needle):
     return None
 
 
+def eeprom_from_ko(ko):
+    """Pick the populated 4 KiB MT7916 EEPROM array out of mt_wifi.ko."""
+    best = None
+    for m in re.finditer(re.escape(EEPROM_MAGIC), ko):
+        blob = ko[m.start():m.start() + EEPROM_SIZE]
+        if len(blob) < EEPROM_SIZE:
+            continue
+        nz = sum(1 for b in blob if b not in (0, 0xFF))
+        print("  eeprom candidate @%#x: %d non-zero bytes" % (m.start(), nz))
+        if best is None or nz > best[0]:
+            best = (nz, blob)
+    if not best:
+        raise SystemExit("no EEPROM blob found")
+    return best[1], best[0]
+
+
 def main():
+    if len(sys.argv) == 4 and sys.argv[1] == "--ko":
+        ko = open(sys.argv[2], "rb").read()
+        blob, nz = eeprom_from_ko(ko)
+        open(sys.argv[3], "wb").write(blob)
+        print("wrote %s (%d bytes, %d non-zero)" % (sys.argv[3], len(blob), nz))
+        return
+
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     src, dst = sys.argv[1:3]

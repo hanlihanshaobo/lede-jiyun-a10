@@ -115,6 +115,10 @@ jobs:
           mkdir -p "$UCI_DIR"
           cp files/99-jiyun-switch "$UCI_DIR/99-jiyun-switch"
           chmod +x "$UCI_DIR/99-jiyun-switch"
+          # stable per-board MACs derived from the eMMC CID (the factory MACs
+          # live in the WayOS config partition which mainline cannot read)
+          cp files/99-jiyun-mac "$UCI_DIR/99-jiyun-mac"
+          chmod +x "$UCI_DIR/99-jiyun-mac"
 
           # MT7916 needs an EEPROM blob; without it mt7915 probe fails and no
           # wlan phy is registered. Use the generic 4 KiB one from the

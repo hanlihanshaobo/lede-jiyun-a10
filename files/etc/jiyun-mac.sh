@@ -21,4 +21,7 @@ changed=0
 
 uci commit wireless
 logger -t jiyun-mac "WLAN MACs set: $w24 / $w5"
-wifi reload
+# hostapd cannot change its BSSID on SIGHUP - a full restart is required
+wifi down
+sleep 2
+wifi up

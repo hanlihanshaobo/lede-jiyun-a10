@@ -93,6 +93,18 @@ jobs:
             cat files/armv8-jiyun-a10.mk >> "$ARMV8_MK"
           fi
 
+          # The generic kernel config fragment explicitly disables the
+          # swconfig core and the RTL8367B driver, overriding .config - flip
+          # those three lines so the switch driver is really built in.
+          KCFG=lede/target/linux/generic/config-6.18
+          sed -i \
+            -e 's/^# CONFIG_SWCONFIG is not set/CONFIG_SWCONFIG=y/' \
+            -e 's/^# CONFIG_RTL8366_SMI is not set/CONFIG_RTL8366_SMI=y/' \
+            -e 's/^# CONFIG_RTL8367B_PHY is not set/CONFIG_RTL8367B_PHY=y/' \
+            "$KCFG"
+          grep -E '^CONFIG_(SWCONFIG|RTL8366_SMI|RTL8367B_PHY)=' "$KCFG" || \
+            { echo "ERROR: could not enable the switch driver in $KCFG"; exit 1; }
+
           # rootfs overlay: configure the RTL8367S switch (CPU port into the
           # LAN VLAN) - the rtl8367b swconfig driver does not do that itself
           UCI_DIR=lede/target/linux/rockchip/base-files/etc/uci-defaults

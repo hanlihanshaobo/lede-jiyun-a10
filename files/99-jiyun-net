@@ -1,0 +1,66 @@
+#!/bin/sh
+# Jiyun A10 network + MAC defaults (single script: the bridge must exist before
+# its MAC is set, so keep both in one place).
+#
+# The RTL8367S is driven by the mainline DSA driver (kmod-dsa-rtl8365mb), so
+# every switch port is a real netdev:
+#   lan1, lan2, lan3  - the three LAN jacks (switch ports 0/1/3)
+#   wan               - the WAN jack        (switch port 4)
+#   (port 2 is not populated on this board)
+#
+# MACs: the factory ones live in the WayOS config partition of the SPI NOR,
+# which mainline cannot read, so derive a locally administered MAC from the
+# eMMC CID - unique per board, stable across reboots and rootfs re-flashes.
+#   LAN  = base,  WAN = base+8,  2.4G = base-5,  5G = base+3
+
+. /lib/functions/system.sh
+
+BASE="$(macaddr_generate_from_mmc_cid mmcblk0 2>/dev/null)"
+[ -n "$BASE" ] || BASE="02:00:00:00:00:01"
+WAN_MAC="$(macaddr_add "$BASE" 8)"
+WL24_MAC="$(macaddr_add "$BASE" -5)"
+WL5_MAC="$(macaddr_add "$BASE" 3)"
+logger -t jiyun-net "MAC base from eMMC CID: $BASE"
+
+uci -q batch <<EOF
+# --- LAN: bridge over the three DSA ports -------------------------------
+delete network.@switch[0]
+delete network.@switch_vlan[0]
+delete network.@switch_vlan[1]
+delete network.dev_lan
+delete network.brlan
+
+set network.lan.device='br-lan'
+
+set network.brlan='device'
+set network.brlan.name='br-lan'
+set network.brlan.type='bridge'
+set network.brlan.macaddr='$BASE'
+add_list network.brlan.ports='lan1'
+add_list network.brlan.ports='lan2'
+add_list network.brlan.ports='lan3'
+
+# --- WAN: the "wan" DSA port -------------------------------------------
+# NOTE: use a named section - "add network interface" would create an
+# anonymous one and re-running this would duplicate it.
+delete network.wan
+set network.wan='interface'
+set network.wan.device='wan'
+set network.wan.proto='dhcp'
+set network.wan.macaddr='$WAN_MAC'
+
+# --- CPU port (DSA conduit) --------------------------------------------
+delete network.dev_eth0
+set network.dev_eth0='device'
+set network.dev_eth0.name='eth0'
+set network.dev_eth0.macaddr='$BASE'
+
+# --- wireless -----------------------------------------------------------
+set wireless.default_radio0.macaddr='$WL24_MAC'
+set wireless.default_radio1.macaddr='$WL5_MAC'
+
+commit network
+commit wireless
+EOF
+
+exit 0

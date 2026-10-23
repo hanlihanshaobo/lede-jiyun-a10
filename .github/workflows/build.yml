@@ -101,8 +101,12 @@ jobs:
             -e 's/^# CONFIG_SWCONFIG is not set/CONFIG_SWCONFIG=y/' \
             -e 's/^# CONFIG_RTL8366_SMI is not set/CONFIG_RTL8366_SMI=y/' \
             -e 's/^# CONFIG_RTL8367B_PHY is not set/CONFIG_RTL8367B_PHY=y/' \
+            -e 's/^# CONFIG_NET_SWITCHDEV is not set/CONFIG_NET_SWITCHDEV=y/' \
+            -e 's/^# CONFIG_NET_DSA is not set/CONFIG_NET_DSA=y/' \
+            -e 's/^# CONFIG_NET_DSA_REALTEK is not set/CONFIG_NET_DSA_REALTEK=m/' \
+            -e 's/^# CONFIG_NET_DSA_TAG_RTL8_4 is not set/CONFIG_NET_DSA_TAG_RTL8_4=m/' \
             "$KCFG"
-          grep -E '^CONFIG_(SWCONFIG|RTL8366_SMI|RTL8367B_PHY)=' "$KCFG" || \
+          grep -E '^CONFIG_(SWCONFIG|RTL8366_SMI|RTL8367B_PHY|NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$KCFG" || \
             { echo "ERROR: could not enable the switch driver in $KCFG"; exit 1; }
 
           # rootfs overlay: configure the RTL8367S switch (CPU port into the

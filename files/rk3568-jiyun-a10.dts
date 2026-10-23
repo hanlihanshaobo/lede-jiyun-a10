@@ -200,30 +200,12 @@
 	};
 
 	/*
-	 * RTL8367S 5-port managed switch, CPU port (7) on RGMII -> gmac0.
-	 * Node format taken from the working NSY G68 Plus (rk3568 + RTL8367S +
-	 * MT7916), which is electrically identical to the Jiyun A10.
-	 * Driver: kmod-switch-rtl8367b (out-of-tree rtl8367b.c, "realtek,rtl8367s")
-	 *
-	 * NOTE: the node has to live at the root level (not below &mdio0) -
-	 * the driver is a platform driver, the MDIO bus is only referenced
-	 * through the "mii-bus" phandle.
+	 * RTL8367S 5-port switch - handled by the mainline DSA driver
+	 * (kmod-dsa-rtl8365mb, variant "RTL8367S" 0x6367/0x00a0).  The node must
+	 * live below the MDIO bus, and the CPU port (7, RGMII) references the
+	 * gmac0 conduit.  Ports 0/1/3 are the 3 LAN jacks, port 4 the WAN jack,
+	 * port 2 is not populated on this board.
 	 */
-	rtlgsw@0 {
-		compatible = "realtek,rtl8367s";
-		realtek,mdio = <&mdio0>;
-		mii-bus = <&mdio0>;
-		realtek,id = <29>;
-		phy-id = <29>;
-		cpu_port = <7>;
-
-		/* txdelay, rxdelay, mode, force_mode, txpause, rxpause, link, duplex, speed */
-		/* extif1 = port 6 (SGMII, unused on this board) */
-		realtek,extif1 = <0 0 11 1 1 1 1 1 2>;
-		/* extif2 = port 7 (RGMII, CPU port) */
-		realtek,extif2 = <0 0 1 1 1 1 1 1 2>;
-		status = "okay";
-	};
 };
 
 &cpu0 {
@@ -291,6 +273,42 @@
 
 &mdio0 {
 	status = "okay";
+
+	rtl8367s: switch@1d {
+		compatible = "realtek,rtl8365mb";
+		reg = <0x1d>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				label = "lan1";
+			};
+
+			port@1 {
+				reg = <1>;
+				label = "lan2";
+			};
+
+			port@3 {
+				reg = <3>;
+				label = "lan3";
+			};
+
+			port@4 {
+				reg = <4>;
+				label = "wan";
+			};
+
+			port@7 {
+				reg = <7>;
+				ethernet = <&gmac0>;
+				phy-mode = "rgmii";
+			};
+		};
+	};
 };
 
 /*
@@ -668,11 +686,6 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd &emmc_datastrobe>;
 	status = "okay";
-
-	mmc@0 {
-		compatible = "mmc-card";
-		reg = <0>;
-	};
 };
 
 &tsadc {

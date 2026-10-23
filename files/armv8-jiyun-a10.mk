@@ -6,7 +6,7 @@ define Device/jiyun_a10
   DEVICE_DTS := rk3568-jiyun-a10
   UBOOT_DEVICE_NAME := generic-rk3568
   IMAGE/sysupgrade.img.gz := boot-common | boot-script | jiyun-a10-img | gzip | append-metadata
-  DEVICE_PACKAGES := swconfig wpad-mbedtls kmod-mt7915e kmod-mt7916-firmware kmod-usb-net kmod-usb-storage
+  DEVICE_PACKAGES := kmod-dsa-rtl8365mb wpad-mbedtls kmod-mt7915e kmod-mt7916-firmware kmod-usb-net kmod-usb-storage
   #
   # NOTE: this device block is appended at the end of armv8.mk, so it inherits the
   # global image variables set by earlier devices (wxy_oec-turbo-4g sets

@@ -93,6 +93,13 @@ jobs:
             cat files/armv8-jiyun-a10.mk >> "$ARMV8_MK"
           fi
 
+          # rootfs overlay: configure the RTL8367S switch (CPU port into the
+          # LAN VLAN) - the rtl8367b swconfig driver does not do that itself
+          UCI_DIR=lede/target/linux/rockchip/base-files/etc/uci-defaults
+          mkdir -p "$UCI_DIR"
+          cp files/99-jiyun-switch "$UCI_DIR/99-jiyun-switch"
+          chmod +x "$UCI_DIR/99-jiyun-switch"
+
       - name: Inject RTL8367S switch driver
         run: |
           set -eux

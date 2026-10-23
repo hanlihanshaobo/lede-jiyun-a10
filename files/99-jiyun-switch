@@ -1,0 +1,41 @@
+#!/bin/sh
+# Configure the RTL8367S switch on the Jiyun A10.
+#
+# The rtl8367b swconfig driver does not put the CPU port into a VLAN by
+# itself, so without this the switch never forwards the LAN ports to eth0
+# (symptom: eth0 rx_packets stays 0 and the LAN gets no DHCP).
+#
+# RTL8367S port map on this board:
+#   0..3  LAN ports
+#   4     WAN port
+#   7     CPU port (RGMII to gmac0)
+#
+# Written once into /etc/config/network; netifd re-applies it on every boot.
+
+DEV="$(swconfig list 2>/dev/null | sed -n 's/^\(switch[0-9][0-9]*\):.*/\1/p' | head -1)"
+[ -n "$DEV" ] || DEV=switch0
+
+uci -q batch <<EOF
+delete network.@switch[0]
+delete network.@switch_vlan[0]
+delete network.@switch_vlan[1]
+
+add network switch
+set network.@switch[-1].name='$DEV'
+set network.@switch[-1].reset='1'
+set network.@switch[-1].enable_vlan='1'
+
+add network switch_vlan
+set network.@switch_vlan[-1].device='$DEV'
+set network.@switch_vlan[-1].vlan='1'
+set network.@switch_vlan[-1].ports='0 1 2 3 7'
+
+add network switch_vlan
+set network.@switch_vlan[-1].device='$DEV'
+set network.@switch_vlan[-1].vlan='2'
+set network.@switch_vlan[-1].ports='4 7t'
+
+commit network
+EOF
+
+exit 0

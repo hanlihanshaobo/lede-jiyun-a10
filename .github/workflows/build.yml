@@ -149,10 +149,15 @@ jobs:
           DTB=$(find "$ROOTDIR" -maxdepth 1 -name "image-rk3568-jiyun-a10.dtb" | head -1)
           [ -n "$DTB" ] || DTB=$(find "$ROOTDIR" -maxdepth 1 -name "*jiyun*.dtb" | head -1)
           test -f "$DTB" || { echo "DTB not found under $ROOTDIR:"; ls -la "$ROOTDIR" | head; exit 1; }
-          test -f "$KDIR/Image" || { echo "Image not found under $KDIR"; exit 1; }
+          if [ ! -f "$ROOTDIR/Image" ]; then
+            [ -f "$KDIR/Image" ] || { echo "Image not found under $KDIR"; exit 1; }
+            IMG="$ROOTDIR/Image"
+          else
+            IMG="$ROOTDIR/Image"
+          fi
           test -f "$ROOTDIR/root.ext4" || { echo "root.ext4 not found under $ROOTDIR"; exit 1; }
           cp -v "$DTB" output/rockchip.dtb
-          cp -v "$KDIR/Image" output/Image
+          cp -v "$IMG" output/Image
           cp -v "$ROOTDIR/root.ext4" output/root.ext4
           find lede/bin/targets -type f \
             \( -name "*jiyun*" -o -name "*.manifest" -o -name "sha256sums" \

@@ -757,6 +757,40 @@ static int rtl8366_init_vlan(struct rtl8366_smi *smi)
 	if (err)
 		return err;
 
+	/*
+	 * Jiyun A10 / RTL8367S: the rtl8367b driver intentionally leaves
+	 * smi->cpu_port as UINT_MAX, but the loop below then shifts by
+	 * UINT_MAX (undefined) and programs a garbage member mask - the switch
+	 * never forwards anything to the CPU port and the LAN is dead.
+	 *
+	 * The CPU port of these chips is always the last one, so put every PHY
+	 * port plus the CPU into a single VLAN (a plain "dumb switch").  That
+	 * is exactly what a swconfig-less router bridge expects; userspace can
+	 * still refine it later via swconfig.
+	 */
+	if (smi->cpu_port >= smi->num_ports) {
+		u32 mask = ((1 << smi->num_ports) - 1);
+
+		/* 5 and 6 are the unused SerDes extifs of the RTL8367S */
+		if (smi->num_ports > 7)
+			mask &= ~((1 << 5) | (1 << 6));
+
+		err = rtl8366_set_vlan(smi, 1, mask, mask, 0);
+		if (err)
+			return err;
+
+		for (port = 0; port < smi->num_ports; port++) {
+			if (smi->num_ports > 7 && (port == 5 || port == 6))
+				continue;
+
+			err = rtl8366_set_pvid(smi, port, 1);
+			if (err)
+				return err;
+		}
+
+		return rtl8366_smi_enable_vlan(smi, 1);
+	}
+
 	for (port = 0; port < smi->num_ports; port++) {
 		u32 mask;
 

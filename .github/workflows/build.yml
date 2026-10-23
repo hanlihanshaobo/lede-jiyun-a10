@@ -134,6 +134,8 @@ jobs:
           make defconfig
           echo "== target/device =="
           grep -E "CONFIG_TARGET_(rockchip|.*jiyun_a10)" .config || true
+          echo "== switch driver =="
+          grep -E "CONFIG_RTL8367B_PHY" .config || echo "WARNING: RTL8367B_PHY not set!"
 
       - name: Download packages
         timeout-minutes: 60

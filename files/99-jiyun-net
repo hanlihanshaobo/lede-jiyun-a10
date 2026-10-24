@@ -25,6 +25,16 @@ WL24_MAC="$(macaddr_add "$BASE" -5)"
 WL5_MAC="$(macaddr_add "$BASE" 3)"
 logger -t jiyun-net "MAC base from eMMC CID: $BASE"
 
+# LEDE's default network config ships an *anonymous* `config device` named
+# br-lan (bridging eth0).  The batch below adds `network.brlan` with the same
+# name, which would show up as a duplicate in LuCI - drop every device
+# section whose name is br-lan first (anonymous ones can't be matched by
+# name from uci batch, so do it in shell).
+for sec in $(uci -q show network | sed -n 's/^\(network\.[^=]*\)=device$/\1/p'); do
+	[ "$(uci -q get "$sec.name")" = "br-lan" ] && uci -q delete "$sec"
+done
+uci -q commit network
+
 uci -q batch <<EOF
 # --- LAN: bridge over the three DSA ports -------------------------------
 delete network.@switch[0]

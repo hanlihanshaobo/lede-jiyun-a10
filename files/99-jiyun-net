@@ -18,6 +18,9 @@
 BASE="$(macaddr_generate_from_mmc_cid mmcblk0 2>/dev/null)"
 [ -n "$BASE" ] || BASE="02:00:00:00:00:01"
 WAN_MAC="$(macaddr_add "$BASE" 8)"
+LAN1_MAC="$(macaddr_add "$BASE" 9)"
+LAN2_MAC="$(macaddr_add "$BASE" 10)"
+LAN3_MAC="$(macaddr_add "$BASE" 11)"
 WL24_MAC="$(macaddr_add "$BASE" -5)"
 WL5_MAC="$(macaddr_add "$BASE" 3)"
 logger -t jiyun-net "MAC base from eMMC CID: $BASE"
@@ -51,6 +54,20 @@ set network.wan='interface'
 set network.wan.device='wan'
 set network.wan.proto='dhcp'
 set network.wan.macaddr='$WAN_MAC'
+
+# DSA user ports get a random MAC per boot otherwise; pin them all down.
+delete network.dev_lan1
+set network.dev_lan1='device'
+set network.dev_lan1.name='lan1'
+set network.dev_lan1.macaddr='$LAN1_MAC'
+delete network.dev_lan2
+set network.dev_lan2='device'
+set network.dev_lan2.name='lan2'
+set network.dev_lan2.macaddr='$LAN2_MAC'
+delete network.dev_lan3
+set network.dev_lan3='device'
+set network.dev_lan3.name='lan3'
+set network.dev_lan3.macaddr='$LAN3_MAC'
 
 # DSA user ports ignore the interface macaddr; a device section does work.
 delete network.dev_wan

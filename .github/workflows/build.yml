@@ -124,47 +124,39 @@ jobs:
           cd lede
           make download -j"$(nproc)" || make download -j1 V=s
 
-      - name: Build kernel (DTS check)
-        run: |
-          cd lede
-          # Order matters on a clean tree: the host tools must exist before the
-          # toolchain, and the toolchain before the kernel. Asking for
-          # target/linux/compile alone does not pull them in, and the build then
-          # dies on a missing host binary (m4 / flex / bc).
-          #
-          # NOTE: "make toolchain" is a no-op (it is a directory); the real
-          # target is toolchain/install.
-          set -o pipefail
-          for t in tools/install toolchain/install target/linux/compile; do
-            echo "==> make $t"
-            if ! make "$t" -j"$(nproc)" 2>&1 | tee "/tmp/${t//\//-}.log"; then
-              echo "::warning::$t failed in parallel, retrying serially for a readable error"
-              make "$t" -j1 V=s 2>&1 | tee "/tmp/${t//\//-}-serial.log" || true
-              {
-                echo "### make $t failed"
-                echo '```'
-                tail -60 "/tmp/${t//\//-}-serial.log"
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
-              exit 1
-            fi
-          done
-
       - name: Build
         run: |
           cd lede
           set -o pipefail
-          if ! make -j"$(nproc)" 2>&1 | tee /tmp/build.log; then
-            echo "::warning::parallel build failed, retrying serially for a readable error"
-            make -j1 V=s 2>&1 | tee /tmp/build-serial.log || true
-            {
-              echo "### build failed"
-              echo '```'
-              tail -80 /tmp/build-serial.log
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          # One "make" walks tools -> toolchain -> target/linux -> packages ->
+          # images in dependency order. Driving the stages by hand is fragile on
+          # a clean tree: it only ever worked because a cached staging_dir was
+          # always present, and #47/#48 both died in toolchain/install.
+          if make -j"$(nproc)" 2>&1 | tee /tmp/build.log; then
+            exit 0
           fi
+
+          echo "::warning::parallel build failed, retrying serially for a readable error"
+          make -j1 V=s 2>&1 | tee /tmp/build-serial.log || true
+
+          {
+            echo "### build failed"
+            echo '```'
+            tail -60 /tmp/build-serial.log
+            echo '```'
+            echo
+            echo "### disk"
+            echo '```'
+            df -h / || true
+            du -sh build_dir staging_dir dl 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # The job log needs a GitHub login; error annotations do not, so push
+          # the interesting lines into the UI as well.
+          grep -iE 'error|no space left|\*\*\*' /tmp/build-serial.log | tail -8 |
+            while IFS= read -r line; do echo "::error::${line:0:900}"; done
+          exit 1
 
       - name: Collect build output
         run: |

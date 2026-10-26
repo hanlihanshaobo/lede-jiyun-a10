@@ -24,9 +24,6 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
-      # CI-only edits do not need a 1 h build; the workflow file of a run is
-      # always read from the commit being built, so they take effect anyway.
-      - ".github/**"
   schedule:
     - cron: "0 18 * * 5"
 
@@ -37,11 +34,10 @@ concurrency:
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'master' }}
-  # push / schedule build the eMMC package only: the rootfs is what gets
-  # iterated on. The SPI package carries the boot chain *and the kernel*, so it
-  # only needs a rebuild when the kernel, the DTS or the device recipe changes -
-  # run the workflow manually with "spi" or "both" for that.
-  PACKAGES: ${{ github.event.inputs.packages || 'emmc' }}
+  # push / schedule build both packages for now, to get a complete set into the
+  # latest release; switch the fallback to 'emmc' once the SPI package is
+  # validated, since only the rootfs gets iterated on afterwards.
+  PACKAGES: ${{ github.event.inputs.packages || 'both' }}
 
 jobs:
   # -------------------------------------------------------------------------
@@ -131,15 +127,44 @@ jobs:
       - name: Build kernel (DTS check)
         run: |
           cd lede
+          # Order matters on a clean tree: the host tools must exist before the
+          # toolchain, and the toolchain before the kernel. Asking for
+          # target/linux/compile alone does not pull them in, and the build then
+          # dies on a missing host binary (m4 / flex / bc).
+          #
           # NOTE: "make toolchain" is a no-op (it is a directory); the real
-          # target that builds+installs the cross toolchain is toolchain/install
-          make toolchain/install -j"$(nproc)" || make toolchain/install -j1 V=s
-          make target/linux/compile -j"$(nproc)" || make target/linux/compile -j1 V=s
+          # target is toolchain/install.
+          set -o pipefail
+          for t in tools/install toolchain/install target/linux/compile; do
+            echo "==> make $t"
+            if ! make "$t" -j"$(nproc)" 2>&1 | tee "/tmp/${t//\//-}.log"; then
+              echo "::warning::$t failed in parallel, retrying serially for a readable error"
+              make "$t" -j1 V=s 2>&1 | tee "/tmp/${t//\//-}-serial.log" || true
+              {
+                echo "### make $t failed"
+                echo '```'
+                tail -60 "/tmp/${t//\//-}-serial.log"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          done
 
       - name: Build
         run: |
           cd lede
-          make -j"$(nproc)" || make -j1 V=s
+          set -o pipefail
+          if ! make -j"$(nproc)" 2>&1 | tee /tmp/build.log; then
+            echo "::warning::parallel build failed, retrying serially for a readable error"
+            make -j1 V=s 2>&1 | tee /tmp/build-serial.log || true
+            {
+              echo "### build failed"
+              echo '```'
+              tail -80 /tmp/build-serial.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Collect build output
         run: |

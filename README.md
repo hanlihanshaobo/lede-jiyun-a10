@@ -10,7 +10,7 @@ below on top, so upstream updates are trivial.
 ## Layout
 
 ```
-.github/workflows/build.yml     Cloud build: build -> assemble, caches the LEDE tree
+.github/workflows/build.yml     Cloud build: build -> pack-emmc / pack-spi -> release
 scripts/prepare.sh              layer everything below onto a cloned LEDE tree
 files/rk3568-jiyun-a10.dts      Device tree (DSA switch + PCIe + gmac)
 files/armv8-jiyun-a10.mk        Device/image recipe (DEVICE_PACKAGES, IMAGE/emmc.img)

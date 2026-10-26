@@ -79,17 +79,11 @@ jobs:
           git clone --depth 1 --recurse-submodules --shallow-submodules \
             --branch "${LEDE_REF}" "${LEDE_REPO}" lede
 
-      - name: Cache LEDE build tree
-        uses: actions/cache@v4
-        with:
-          path: |
-            lede/build_dir
-            lede/staging_dir
-            lede/dl
-          key: jiyun-a10-lede-${{ github.run_id }}
-          restore-keys: |
-            jiyun-a10-lede-
-
+      # NOTE: no build cache on purpose. Builds are infrequent now that the
+      # port works, and restoring build_dir/staging_dir can hide upstream
+      # changes behind stale stamp files. A clean build is the cheaper trade:
+      # nothing in bin/targets is cached either, so every image is generated
+      # from scratch anyway.
       - name: Update and install feeds
         run: |
           cd lede

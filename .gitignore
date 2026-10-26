@@ -2,3 +2,5 @@
 output/
 *.dtb
 *.log
+__pycache__/
+*.pyc

@@ -85,71 +85,7 @@ jobs:
             file wget curl libelf-dev
 
       - name: Inject Jiyun A10 device support
-        run: |
-          set -eux
-          DTS_DIR=lede/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip
-          mkdir -p "$DTS_DIR"
-          cp files/rk3568-jiyun-a10.dts "$DTS_DIR/rk3568-jiyun-a10.dts"
-
-          ARMV8_MK=lede/target/linux/rockchip/image/armv8.mk
-          if ! grep -q "Device/jiyun_a10" "$ARMV8_MK"; then
-            cat files/armv8-jiyun-a10.mk >> "$ARMV8_MK"
-          fi
-
-          # The generic kernel config fragment explicitly disables the
-          # swconfig core and the RTL8367B driver, overriding .config - flip
-          # those three lines so the switch driver is really built in.
-          KCFG=lede/target/linux/generic/config-6.18
-          sed -i \
-            -e 's/^# CONFIG_SWCONFIG is not set/CONFIG_SWCONFIG=y/' \
-            -e 's/^# CONFIG_RTL8366_SMI is not set/CONFIG_RTL8366_SMI=y/' \
-            -e 's/^# CONFIG_RTL8367B_PHY is not set/CONFIG_RTL8367B_PHY=y/' \
-            -e 's/^# CONFIG_NET_SWITCHDEV is not set/CONFIG_NET_SWITCHDEV=y/' \
-            -e 's/^# CONFIG_NET_DSA is not set/CONFIG_NET_DSA=y/' \
-            -e 's/^# CONFIG_NET_DSA_REALTEK is not set/CONFIG_NET_DSA_REALTEK=m/' \
-            -e 's/^# CONFIG_NET_DSA_TAG_RTL8_4 is not set/CONFIG_NET_DSA_TAG_RTL8_4=m/' \
-            "$KCFG"
-          grep -E '^CONFIG_(SWCONFIG|RTL8366_SMI|RTL8367B_PHY|NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$KCFG" || \
-            { echo "ERROR: could not enable the switch driver in $KCFG"; exit 1; }
-
-          # rootfs overlay: configure the RTL8367S switch (CPU port into the
-          # LAN VLAN) - the rtl8367b swconfig driver does not do that itself
-          UCI_DIR=lede/target/linux/rockchip/base-files/etc/uci-defaults
-          mkdir -p "$UCI_DIR"
-          cp files/99-jiyun-net "$UCI_DIR/99-jiyun-net"
-          chmod +x "$UCI_DIR/99-jiyun-net"
-
-          # Per-unit WLAN MACs: the first-boot "wifi config" (S18fanctrl)
-          # rewrites /etc/config/wireless, so uci-defaults is too early -
-          # rc.local runs at the very end of boot and applies them.
-          cp files/etc/jiyun-mac.sh lede/target/linux/rockchip/base-files/etc/jiyun-mac.sh
-          cp files/etc/rc.local     lede/target/linux/rockchip/base-files/etc/rc.local
-
-          # MT7916 needs an EEPROM blob; without it mt7915 probe fails and no
-          # wlan phy is registered. This is the ART/Factory copy - the only
-          # variant that declares 2.4G+5G (see the porting notes).
-          FW_DIR=lede/target/linux/rockchip/base-files/lib/firmware/mediatek
-          mkdir -p "$FW_DIR"
-          cp files/mt7916_eeprom.bin "$FW_DIR/mt7916_eeprom.bin"
-
-      - name: Inject RTL8367S switch driver
-        run: |
-          set -eux
-          # The RTL8367S support (compatible "realtek,rtl8367s", cpu_port 7)
-          # is not in coolshowwolf/lede yet - take the updated, GPL-licensed
-          # rtl8367b/rtl8367 driver from the working NSY G68 Plus tree.
-          PHY_DIR=lede/target/linux/generic/files/drivers/net/phy
-          INC_DIR=lede/target/linux/generic/files/include/linux
-          BP_DIR=lede/target/linux/generic/backport-6.18
-          mkdir -p "$PHY_DIR" "$INC_DIR" "$BP_DIR"
-          cp kernel/files/drivers/net/phy/rtl8367.c "$PHY_DIR/"
-          cp kernel/files/drivers/net/phy/rtl8367b.c "$PHY_DIR/"
-          # rtl8366_smi needs the rwbts/rdbt helpers used by the RTL8367S driver
-          cp kernel/files/drivers/net/phy/rtl8366_smi.c "$PHY_DIR/"
-          cp kernel/files/drivers/net/phy/rtl8366_smi.h "$PHY_DIR/"
-          cp kernel/files/include/linux/rtl8367.h "$INC_DIR/"
-          cp kernel/backport-6.18/900-net-phy-add-rtl8367s.patch "$BP_DIR/"
-          grep -n "rtl8367" "$PHY_DIR/Makefile" || true
+        run: ./scripts/prepare.sh lede
 
       - name: Configure
         run: |
@@ -200,10 +136,12 @@ jobs:
           cp -v "$DTB" output/rockchip.dtb
           cp -v "$IMG" output/Image
           cp -v "$ROOTDIR/root.ext4" output/root.ext4
-          find lede/bin/targets -type f \
-            \( -name "*jiyun*" -o -name "*.manifest" -o -name "sha256sums" \
-               -o -name "packages.tar" -o -name "*.config" \) \
-            -exec cp -v {} output/ \; || true
+
+          # eMMC flashing package, produced by Build/jiyun-a10-emmc-img
+          EMMC=$(find lede/bin/targets -name "*jiyun*-emmc.img" | head -1)
+          test -n "$EMMC" || { echo "emmc.img was not produced"; \
+            find lede/bin/targets -type f; exit 1; }
+          cp -v "$EMMC" output/jiyun-a10-emmc.img
           ls -al output
 
       - name: Upload build output
@@ -215,9 +153,12 @@ jobs:
           if-no-files-found: error
 
   # -------------------------------------------------------------------------
-  # Job 2: assemble the SPI NOR bootstrap FIT from the build output.  This is
-  # deliberately split out so that a FIT bug only needs this (fast) job to be
-  # re-run, instead of the whole 1.5 h build.
+  # Job 2: turn the build output into the two flashing packages.  This is
+  # deliberately split out so that a packaging bug only needs this (fast) job to
+  # be re-run, instead of the whole 1.5 h build.
+  #
+  #   jiyun-a10-spi.img    loader + u-boot + FIT   -> `wl 0` on SPI NOR
+  #   jiyun-a10-emmc.img   MBR + root.ext4         -> `wl 0` on eMMC
   # -------------------------------------------------------------------------
   assemble:
     needs: build
@@ -252,13 +193,40 @@ jobs:
             /tmp/Image /tmp/rockchip.dtb output/jiyun-a10-openwrt.fit
           ls -l output/jiyun-a10-openwrt.fit
 
+      - name: Assemble SPI NOR flashing image
+        run: |
+          set -eux
+          # Stock loader (0x0) + stock u-boot (0x100000) + OpenWrt FIT (0x300000),
+          # i.e. the whole boot chain in one 8.6 MiB file. It fits the maskrom
+          # 32 MiB write window, so a completely blank SPI NOR can be flashed
+          # without a loader being present beforehand.
+          python3 tools/mk-spi-img.py files/stock_loader.bin files/stock_uboot.bin \
+            output/jiyun-a10-openwrt.fit output/jiyun-a10-spi.img
+          ls -l output/jiyun-a10-spi.img
+
+      - name: Contract check
+        run: |
+          set -eux
+          test -f output/jiyun-a10-spi.img
+          test -f output/jiyun-a10-emmc.img
+          # Downstream flashing relies on these exact offsets.
+          test "$(stat -c%s output/jiyun-a10-emmc.img)" -gt 268435456
+          python3 - <<'PY'
+          d = open('output/jiyun-a10-spi.img', 'rb').read()
+          assert d[0x100000:0x100004] == b'\xd0\r\xfe\xed', 'u-boot FIT missing @0x100000'
+          assert d[0x300000:0x300004] == b'\xd0\r\xfe\xed', 'kernel FIT missing @0x300000'
+          m = open('output/jiyun-a10-emmc.img', 'rb').read(512)
+          assert m[510:512] == b'\x55\xaa', 'MBR signature missing'
+          assert int.from_bytes(m[454:458], 'little') == 2048, 'p1 must start at LBA 2048'
+          print('spi/emmc package layout OK')
+          PY
+
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: jiyun-a10-openwrt
+          name: jiyun-a10-flash
           path: |
-            output/jiyun-a10-openwrt.fit
-            output/rockchip.dtb
-            output/root.ext4
+            output/jiyun-a10-spi.img
+            output/jiyun-a10-emmc.img
           retention-days: 30
           if-no-files-found: error

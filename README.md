@@ -50,14 +50,29 @@ the same tree.
 Push to `main`, run the workflow manually (Actions → *Build Jiyun A10 OpenWrt* →
 *Run workflow*), or wait for the weekly schedule.
 
-Two jobs:
+`workflow_dispatch` takes a `packages` input; push and schedule default to
+`emmc`. The two packages are built by independent jobs and uploaded as
+independent artifacts:
+
+| `packages` | Artifacts |
+|------------|-----------|
+| `emmc` (default) | `jiyun-a10-emmc` |
+| `spi` | `jiyun-a10-spi` |
+| `both` | both |
 
 1. **build** — clones LEDE, installs feeds, runs `scripts/prepare.sh`, builds the
-   kernel + image and uploads `output/` (kernel `Image`, `rockchip.dtb`,
-   `root.ext4`, and the eMMC package from `Build/jiyun-a10-emmc-img`).
-2. **assemble** — repacks `Image` + `rockchip.dtb` into a FIT with the stock FIT
-   header, wraps it together with the stock loader/u-boot into the SPI package,
-   and uploads the final artifact.
+   kernel + rootfs, and uploads only what the selected packages need (an
+   eMMC-only run skips the 40 MB kernel `Image`).
+2. **pack-emmc** — verifies and uploads `jiyun-a10-emmc.img`.
+3. **pack-spi** — repacks `Image` + `rockchip.dtb` into a FIT with the stock FIT
+   header, wraps it together with the stock loader/u-boot, and uploads
+   `jiyun-a10-spi.img`.
+
+> **The SPI package carries the kernel.** Rebuild it (`packages: both`) whenever
+> the kernel, the DTS, the device recipe or the upstream LEDE revision changes.
+> A newer eMMC rootfs flashed against an older SPI package will have kmods that
+> do not match the running kernel. `output/kernel.sha256` from two runs tells you
+> whether the kernel actually changed.
 
 ## Flash packages
 

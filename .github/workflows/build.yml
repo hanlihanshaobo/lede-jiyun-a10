@@ -3,6 +3,14 @@ name: Build Jiyun A10 OpenWrt
 on:
   workflow_dispatch:
     inputs:
+      packages:
+        description: "Flash packages to build"
+        type: choice
+        options:
+          - emmc
+          - spi
+          - both
+        default: emmc
       lede_repo:
         description: "Upstream LEDE repo"
         required: false
@@ -26,12 +34,17 @@ concurrency:
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'master' }}
+  # push / schedule build the eMMC package only: the rootfs is what gets
+  # iterated on. The SPI package carries the boot chain *and the kernel*, so it
+  # only has to be rebuilt when the kernel, the DTS or the device recipe
+  # changes - pick "spi" or "both" when running the workflow manually.
+  PACKAGES: ${{ github.event.inputs.packages || 'emmc' }}
 
 jobs:
   # -------------------------------------------------------------------------
-  # Job 1: compile everything (toolchain + kernel + image).  Uploads the raw
-  # pieces (kernel Image, device dtb, root.ext4, sysupgrade.img.gz) so the
-  # FIT assembly below can run/fail/re-run independently of this slow job.
+  # Job 1: compile everything (toolchain + kernel + rootfs) and upload only the
+  # pieces the packaging jobs need, so an eMMC-only run does not pay for the
+  # 40 MB kernel Image or for the FIT.
   # -------------------------------------------------------------------------
   build:
     runs-on: ubuntu-22.04
@@ -121,27 +134,34 @@ jobs:
         run: |
           set -eux
           mkdir -p output
-          KDIR=$(ls -d lede/build_dir/target-*/linux-rockchip_armv8/linux-* | head -1)
-          ROOTDIR=$(ls -d lede/build_dir/target-*/linux-rockchip_armv8 | head -1)
-          DTB=$(find "$ROOTDIR" -maxdepth 1 -name "image-rk3568-jiyun-a10.dtb" | head -1)
-          [ -n "$DTB" ] || DTB=$(find "$ROOTDIR" -maxdepth 1 -name "*jiyun*.dtb" | head -1)
-          test -f "$DTB" || { echo "DTB not found under $ROOTDIR:"; ls -la "$ROOTDIR" | head; exit 1; }
-          if [ ! -f "$ROOTDIR/Image" ]; then
-            [ -f "$KDIR/Image" ] || { echo "Image not found under $KDIR"; exit 1; }
-            IMG="$ROOTDIR/Image"
-          else
-            IMG="$ROOTDIR/Image"
-          fi
-          test -f "$ROOTDIR/root.ext4" || { echo "root.ext4 not found under $ROOTDIR"; exit 1; }
-          cp -v "$DTB" output/rockchip.dtb
-          cp -v "$IMG" output/Image
-          cp -v "$ROOTDIR/root.ext4" output/root.ext4
+          case "$PACKAGES" in
+            emmc) WANT_EMMC=1; WANT_KERNEL=0 ;;
+            spi)  WANT_EMMC=0; WANT_KERNEL=1 ;;
+            both) WANT_EMMC=1; WANT_KERNEL=1 ;;
+            *) echo "unknown packages: $PACKAGES"; exit 1 ;;
+          esac
+          echo "packages=$PACKAGES emmc=$WANT_EMMC kernel=$WANT_KERNEL"
 
-          # eMMC flashing package, produced by Build/jiyun-a10-emmc-img
-          EMMC=$(find lede/bin/targets -name "*jiyun*-emmc.img" | head -1)
-          test -n "$EMMC" || { echo "emmc.img was not produced"; \
-            find lede/bin/targets -type f; exit 1; }
-          cp -v "$EMMC" output/jiyun-a10-emmc.img
+          ROOTDIR=$(ls -d lede/build_dir/target-*/linux-rockchip_armv8 | head -1)
+
+          if [ "$WANT_KERNEL" = 1 ]; then
+            DTB=$(find "$ROOTDIR" -maxdepth 1 -name "image-rk3568-jiyun-a10.dtb" | head -1)
+            [ -n "$DTB" ] || DTB=$(find "$ROOTDIR" -maxdepth 1 -name "*jiyun*.dtb" | head -1)
+            test -f "$DTB" || { echo "DTB not found under $ROOTDIR:"; ls -la "$ROOTDIR" | head; exit 1; }
+            test -f "$ROOTDIR/Image" || { echo "Image not found under $ROOTDIR"; exit 1; }
+            cp -v "$DTB" output/rockchip.dtb
+            cp -v "$ROOTDIR/Image" output/Image
+            # lets whoever compares two runs see whether the kernel changed
+            sha256sum output/Image | tee output/kernel.sha256
+          fi
+
+          if [ "$WANT_EMMC" = 1 ]; then
+            # produced by Build/jiyun-a10-emmc-img
+            EMMC=$(find lede/bin/targets -name "*jiyun*-emmc.img" | head -1)
+            test -n "$EMMC" || { echo "emmc.img was not produced"; \
+              find lede/bin/targets -type f; exit 1; }
+            cp -v "$EMMC" output/jiyun-a10-emmc.img
+          fi
           ls -al output
 
       - name: Upload build output
@@ -153,15 +173,51 @@ jobs:
           if-no-files-found: error
 
   # -------------------------------------------------------------------------
-  # Job 2: turn the build output into the two flashing packages.  This is
-  # deliberately split out so that a packaging bug only needs this (fast) job to
-  # be re-run, instead of the whole 1.5 h build.
-  #
-  #   jiyun-a10-spi.img    loader + u-boot + FIT   -> `wl 0` on SPI NOR
-  #   jiyun-a10-emmc.img   MBR + root.ext4         -> `wl 0` on eMMC
+  # Job 2a: eMMC package - MBR + root.ext4, written with `wl 0` in loader mode.
+  # Runs on every push/schedule; skipped when only the SPI package is wanted.
   # -------------------------------------------------------------------------
-  assemble:
+  pack-emmc:
     needs: build
+    if: ${{ github.event.inputs.packages != 'spi' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: output
+
+      - name: Contract check
+        run: |
+          set -eux
+          test -f output/jiyun-a10-emmc.img
+          # Flashing relies on exactly this layout: 1 MiB reserved, p1 @ LBA 2048.
+          test "$(stat -c%s output/jiyun-a10-emmc.img)" -gt 268435456
+          python3 - <<'PY'
+          m = open('output/jiyun-a10-emmc.img', 'rb').read(512)
+          assert m[510:512] == b'\x55\xaa', 'MBR signature missing'
+          assert int.from_bytes(m[454:458], 'little') == 2048, 'p1 must start at LBA 2048'
+          assert m[450] == 0x83, 'p1 must be type 0x83 (Linux)'
+          print('emmc layout OK')
+          PY
+
+      - name: Upload eMMC package
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiyun-a10-emmc
+          path: output/jiyun-a10-emmc.img
+          retention-days: 30
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # Job 2b: SPI package - loader + u-boot + FIT, written with `wl 0` in
+  # maskrom. Only rebuilt on demand: it carries the kernel, so it must be
+  # refreshed whenever the kernel / DTS / device recipe changes, otherwise the
+  # kmods in a newer eMMC rootfs will not match.
+  # -------------------------------------------------------------------------
+  pack-spi:
+    needs: build
+    if: ${{ github.event.inputs.packages == 'spi' || github.event.inputs.packages == 'both' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout build recipes
@@ -178,7 +234,6 @@ jobs:
           set -eux
           test -f output/Image || { echo "Image missing"; exit 1; }
           test -f output/rockchip.dtb || { echo "dtb missing"; exit 1; }
-          test -f output/root.ext4 || { echo "root.ext4 missing"; exit 1; }
           cp output/Image /tmp/Image
           cp output/rockchip.dtb /tmp/rockchip.dtb
 
@@ -207,26 +262,18 @@ jobs:
       - name: Contract check
         run: |
           set -eux
-          test -f output/jiyun-a10-spi.img
-          test -f output/jiyun-a10-emmc.img
           # Downstream flashing relies on these exact offsets.
-          test "$(stat -c%s output/jiyun-a10-emmc.img)" -gt 268435456
           python3 - <<'PY'
           d = open('output/jiyun-a10-spi.img', 'rb').read()
           assert d[0x100000:0x100004] == b'\xd0\r\xfe\xed', 'u-boot FIT missing @0x100000'
           assert d[0x300000:0x300004] == b'\xd0\r\xfe\xed', 'kernel FIT missing @0x300000'
-          m = open('output/jiyun-a10-emmc.img', 'rb').read(512)
-          assert m[510:512] == b'\x55\xaa', 'MBR signature missing'
-          assert int.from_bytes(m[454:458], 'little') == 2048, 'p1 must start at LBA 2048'
-          print('spi/emmc package layout OK')
+          print('spi layout OK')
           PY
 
-      - name: Upload firmware
+      - name: Upload SPI package
         uses: actions/upload-artifact@v4
         with:
-          name: jiyun-a10-flash
-          path: |
-            output/jiyun-a10-spi.img
-            output/jiyun-a10-emmc.img
+          name: jiyun-a10-spi
+          path: output/jiyun-a10-spi.img
           retention-days: 30
           if-no-files-found: error

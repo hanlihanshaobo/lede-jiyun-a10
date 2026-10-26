@@ -207,7 +207,7 @@ jobs:
           set -eux
           test -f output/jiyun-a10-emmc.img
           # Flashing relies on exactly this layout: 1 MiB reserved, p1 @ LBA 2048.
-          test "$(stat -c%s output/jiyun-a10-emmc.img)" -gt 268435456
+          test "$(wc -c < output/jiyun-a10-emmc.img | tr -d ' ')" -gt 268435456
           python3 - <<'PY'
           m = open('output/jiyun-a10-emmc.img', 'rb').read(512)
           assert m[510:512] == b'\x55\xaa', 'MBR signature missing'
@@ -292,3 +292,91 @@ jobs:
           path: output/jiyun-a10-spi.img
           retention-days: 30
           if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # Job 3: publish to the rolling "latest" release. The release always keeps
+  # both assets; an eMMC-only run overwrites just the eMMC one, so the SPI
+  # package stays downloadable until it is rebuilt on purpose.
+  # -------------------------------------------------------------------------
+  release:
+    needs: [build, pack-emmc, pack-spi]
+    if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: jiyun-a10-*
+          merge-multiple: true
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: build-output
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          ls -l dist
+
+          IMGS=$(ls dist/*.img 2>/dev/null || true)
+          [ -n "$IMGS" ] || { echo "nothing to publish"; exit 1; }
+
+          KERNEL_SHA=$(awk '{print $1}' build-output/kernel.sha256 2>/dev/null || true)
+          [ -n "$KERNEL_SHA" ] || KERNEL_SHA="(not captured: eMMC-only run)"
+
+          size() { wc -c < "$1" | tr -d ' '; }
+          fmt() { echo "$(($1 / 1048576)) MiB"; }
+          SPI_SIZE="not rebuilt"; EMMC_SIZE="not rebuilt"
+          if [ -f dist/jiyun-a10-spi.img ]; then
+            SPI_SIZE=$(fmt "$(size dist/jiyun-a10-spi.img)")
+          fi
+          if [ -f dist/jiyun-a10-emmc.img ]; then
+            EMMC_SIZE=$(fmt "$(size dist/jiyun-a10-emmc.img)")
+          fi
+
+          cat > notes.md <<EOF
+          Rolling release: the two files below always hold the newest build.
+          Assets not rebuilt in a given run are left untouched.
+
+          | File | Size | Write to | Command |
+          |------|------|----------|---------|
+          | \`jiyun-a10-spi.img\`  | ${SPI_SIZE}  | SPI NOR | \`wl 0\` (works in maskrom) |
+          | \`jiyun-a10-emmc.img\` | ${EMMC_SIZE} | eMMC    | \`wl 0\` (loader mode only) |
+
+          \`\`\`sh
+          RKD=./tools/rkdeveloptool
+          \$RKD ld && \$RKD cs 9 && \$RKD wl 0 jiyun-a10-spi.img    # maskrom: boot chain
+          # power-cycle, hold RESET -> loader mode
+          \$RKD ld && \$RKD cs 1 && \$RKD wl 0 jiyun-a10-emmc.img   # loader: rootfs
+          \`\`\`
+
+          - kernel sha256: \`${KERNEL_SHA}\`
+          - built from: ${GITHUB_SHA} (${PACKAGES})
+          - run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          **The SPI package carries the kernel.** Rebuild it (\`packages: both\`)
+          whenever the kernel, DTS, device recipe or upstream LEDE revision
+          changes - an eMMC rootfs flashed against an older SPI package will
+          have kmods that do not match the running kernel.
+          EOF
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest $IMGS --clobber
+            gh release edit latest \
+              --title "Jiyun A10 — latest firmware" \
+              --notes-file notes.md --latest
+          else
+            gh release create latest $IMGS \
+              --title "Jiyun A10 — latest firmware" \
+              --notes-file notes.md --latest
+          fi
+
+          echo "published:"
+          gh release view latest --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'

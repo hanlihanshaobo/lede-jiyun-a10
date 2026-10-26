@@ -76,6 +76,18 @@ independent artifacts:
 
 ## Flash packages
 
+Every successful build publishes to the rolling
+[`latest` release](https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/latest),
+which always keeps the newest of both files:
+
+```sh
+curl -LO https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/latest/download/jiyun-a10-spi.img
+curl -LO https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/latest/download/jiyun-a10-emmc.img
+```
+
+A run that only rebuilds the eMMC package overwrites that asset and leaves the
+SPI asset in place, so the download links never break.
+
 The build produces exactly two files, which are all that is needed to bring up a
 device with **both SPI NOR and eMMC blank** (maskrom is then the only entry
 point):

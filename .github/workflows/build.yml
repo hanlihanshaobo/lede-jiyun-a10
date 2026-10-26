@@ -34,11 +34,12 @@ concurrency:
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'master' }}
-  # push / schedule build the eMMC package only: the rootfs is what gets
-  # iterated on. The SPI package carries the boot chain *and the kernel*, so it
-  # only has to be rebuilt when the kernel, the DTS or the device recipe
-  # changes - pick "spi" or "both" when running the workflow manually.
-  PACKAGES: ${{ github.event.inputs.packages || 'emmc' }}
+  # TEMPORARY: push builds both packages so the split can be validated end to
+  # end. Flip this fallback back to 'emmc' once the SPI package is frozen: the
+  # SPI package carries the boot chain *and the kernel*, so it only needs a
+  # rebuild when the kernel, the DTS or the device recipe changes, while the
+  # rootfs is what gets iterated on.
+  PACKAGES: ${{ github.event.inputs.packages || 'both' }}
 
 jobs:
   # -------------------------------------------------------------------------
@@ -48,9 +49,23 @@ jobs:
   # -------------------------------------------------------------------------
   build:
     runs-on: ubuntu-22.04
+    # NOTE: env is not available in a job-level `if`, so the resolved package
+    # selection is re-exported as a job output for the packaging jobs below.
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
     steps:
       - name: Checkout build recipes
         uses: actions/checkout@v4
+
+      - name: Plan
+        id: plan
+        run: |
+          case "$PACKAGES" in
+            emmc|spi|both) ;;
+            *) echo "unknown packages: $PACKAGES"; exit 1 ;;
+          esac
+          echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
+          echo "building: $PACKAGES"
 
       - name: Free disk space
         run: |
@@ -178,7 +193,7 @@ jobs:
   # -------------------------------------------------------------------------
   pack-emmc:
     needs: build
-    if: ${{ github.event.inputs.packages != 'spi' }}
+    if: ${{ needs.build.outputs.packages != 'spi' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Download build output
@@ -217,7 +232,7 @@ jobs:
   # -------------------------------------------------------------------------
   pack-spi:
     needs: build
-    if: ${{ github.event.inputs.packages == 'spi' || github.event.inputs.packages == 'both' }}
+    if: ${{ needs.build.outputs.packages == 'spi' || needs.build.outputs.packages == 'both' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout build recipes

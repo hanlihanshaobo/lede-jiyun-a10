@@ -24,6 +24,9 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      # CI-only edits do not need a 1 h build; the workflow file of a run is
+      # always read from the commit being built, so they take effect anyway.
+      - ".github/**"
   schedule:
     - cron: "0 18 * * 5"
 
@@ -34,12 +37,11 @@ concurrency:
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'master' }}
-  # TEMPORARY: push builds both packages so the split can be validated end to
-  # end. Flip this fallback back to 'emmc' once the SPI package is frozen: the
-  # SPI package carries the boot chain *and the kernel*, so it only needs a
-  # rebuild when the kernel, the DTS or the device recipe changes, while the
-  # rootfs is what gets iterated on.
-  PACKAGES: ${{ github.event.inputs.packages || 'both' }}
+  # push / schedule build the eMMC package only: the rootfs is what gets
+  # iterated on. The SPI package carries the boot chain *and the kernel*, so it
+  # only needs a rebuild when the kernel, the DTS or the device recipe changes -
+  # run the workflow manually with "spi" or "both" for that.
+  PACKAGES: ${{ github.event.inputs.packages || 'emmc' }}
 
 jobs:
   # -------------------------------------------------------------------------

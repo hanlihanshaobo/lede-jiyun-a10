@@ -104,7 +104,26 @@ install -m 0644 "$ROOT/kernel/backport-$KVER/900-net-phy-add-rtl8367s.patch" "$B
 echo "backport dir: $BP_DIR"
 
 # ---------------------------------------------------------------------------
-# 6. rootfs overlay (target base-files)
+# 6. drop upstream backports that no longer apply
+#
+# LEDE master tracks the mainline kernel closely, and a generic backport that
+# stops applying takes the whole build down at toolchain/kernel-headers (before
+# anything target specific is even compiled). Only patches that are irrelevant
+# to RK3568 belong on this list; re-check it when the kernel version bumps.
+# ---------------------------------------------------------------------------
+say "drop stale upstream backports"
+for p in \
+	771-v7.1-net-dsa-mxl862xx-cancel-pending-work-on-probe-error.patch
+do
+	f="$BP_DIR/$p"
+	if [ -f "$f" ]; then
+		echo "removing $p (does not apply to the current kernel; mxl862xx is not on this board)"
+		rm -f "$f"
+	fi
+done
+
+# ---------------------------------------------------------------------------
+# 7. rootfs overlay (target base-files)
 # ---------------------------------------------------------------------------
 say "install rootfs overlay"
 BASE="$LEDE/target/linux/rockchip/base-files"

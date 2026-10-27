@@ -110,16 +110,17 @@ echo "backport dir: $BP_DIR"
 # stops applying takes the whole build down at toolchain/kernel-headers (before
 # anything target specific is even compiled). Only patches that are irrelevant
 # to RK3568 belong on this list; re-check it when the kernel version bumps.
+#
+# The whole MxL862xx DSA series (762/764-780) is one moving target: 771 was
+# fixed in one run, 775 failed in the next (#49, #50), 776-780 will follow.
+# The switch is irrelevant to this board, so drop the series by name pattern
+# instead of playing whack-a-mole with individual patches.
 # ---------------------------------------------------------------------------
 say "drop stale upstream backports"
-for p in \
-	771-v7.1-net-dsa-mxl862xx-cancel-pending-work-on-probe-error.patch
-do
-	f="$BP_DIR/$p"
-	if [ -f "$f" ]; then
-		echo "removing $p (does not apply to the current kernel; mxl862xx is not on this board)"
-		rm -f "$f"
-	fi
+shopt -s nullglob
+for f in "$BP_DIR"/*[mM]x[lL]862xx*.patch; do
+	echo "removing $(basename "$f") (MxL862xx DSA series; does not apply to the current kernel and is not on this board)"
+	rm -f "$f"
 done
 
 # ---------------------------------------------------------------------------

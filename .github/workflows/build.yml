@@ -16,9 +16,9 @@ on:
         required: false
         default: "https://github.com/coolsnowwolf/lede"
       lede_ref:
-        description: "Upstream branch/tag/commit"
+        description: "Upstream branch/tag/commit (branch or 40-char sha)"
         required: false
-        default: "master"
+        default: "cc4d5400d29734c1133423b1e45258fcb0dddf8d"
   push:
     branches: [main]
     paths-ignore:
@@ -33,7 +33,10 @@ concurrency:
 
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
-  LEDE_REF: ${{ github.event.inputs.lede_ref || 'master' }}
+  # Pinned to the last upstream tree that built: LEDE master moves daily and
+  # backports in target/linux/generic/backport-6.18 keep breaking the
+  # kernel-headers step (#49, #50). Pass "master" manually to track upstream.
+  LEDE_REF: ${{ github.event.inputs.lede_ref || 'cc4d5400d29734c1133423b1e45258fcb0dddf8d' }}
   # push / schedule build both packages for now, to get a complete set into the
   # latest release; switch the fallback to 'emmc' once the SPI package is
   # validated, since only the rootfs gets iterated on afterwards.
@@ -74,8 +77,21 @@ jobs:
 
       - name: Clone upstream LEDE
         run: |
-          git clone --depth 1 --recurse-submodules --shallow-submodules \
-            --branch "${LEDE_REF}" "${LEDE_REPO}" lede
+          set -eux
+          # LEDE_REF is usually a 40-char commit sha (reproducible builds); a
+          # branch name still works, e.g. lede_ref=master to track upstream.
+          if [ "${#LEDE_REF}" -eq 40 ] && [ -z "$(printf '%s' "$LEDE_REF" | tr -d '0-9a-f')" ]; then
+            echo "pinned upstream commit: $LEDE_REF"
+            git init -q lede
+            git -C lede remote add origin "$LEDE_REPO"
+            git -C lede fetch --depth 1 origin "$LEDE_REF"
+            git -C lede checkout -q FETCH_HEAD
+            git -C lede submodule update --init --recursive --depth 1
+          else
+            git clone --depth 1 --recurse-submodules --shallow-submodules \
+              --branch "${LEDE_REF}" "${LEDE_REPO}" lede
+          fi
+          git -C lede log --oneline -1
 
       # NOTE: no build cache on purpose. Builds are infrequent now that the
       # port works, and restoring build_dir/staging_dir can hide upstream
@@ -152,10 +168,14 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # The job log needs a GitHub login; error annotations do not, so push
-          # the interesting lines into the UI as well.
-          grep -iE 'error|no space left|\*\*\*' /tmp/build-serial.log | tail -8 |
-            while IFS= read -r line; do echo "::error::${line:0:900}"; done
+          # The job log needs a GitHub login; error annotations do not, so put
+          # the context around the first hard failure into the UI. The line
+          # before "*** [...]" is usually the patch/gcc invocation that broke.
+          CTX=$(grep -B9 -m1 '\*\*\* \[' /tmp/build-serial.log || true)
+          [ -n "$CTX" ] || CTX=$(tail -12 /tmp/build-serial.log)
+          printf '%s\n' "$CTX" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done
           exit 1
 
       - name: Collect build output

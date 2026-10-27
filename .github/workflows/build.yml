@@ -34,8 +34,10 @@ concurrency:
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
   # Pinned to the last upstream tree that built: LEDE master moves daily and
-  # backports in target/linux/generic/backport-6.18 keep breaking the
-  # kernel-headers step (#49, #50). Pass "master" manually to track upstream.
+  # backports in target/linux/generic/{backport,pending}-6.18 keep breaking the
+  # kernel-headers step (#47-#51). prepare.sh still has to drop the patch
+  # series for hardware this board does not have - see the comment there.
+  # Pass "master" manually to track upstream, and expect new breakage.
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'cc4d5400d29734c1133423b1e45258fcb0dddf8d' }}
   # push / schedule build both packages for now, to get a complete set into the
   # latest release; switch the fallback to 'emmc' once the SPI package is
@@ -132,7 +134,15 @@ jobs:
           echo "== target/device =="
           grep -E "CONFIG_TARGET_(rockchip|.*jiyun_a10)" .config || true
           echo "== switch driver =="
-          grep -E "CONFIG_RTL8367B_PHY" .config || echo "WARNING: RTL8367B_PHY not set!"
+          # .config carries no kernel symbols (the old CONFIG_RTL8367B_PHY check
+          # could never pass); the switch is the mainline DSA driver, so assert
+          # the kmod that DEVICE_PACKAGES pulls in. Both checks are hard errors:
+          # without them the image builds fine but ends up without LAN.
+          grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_jiyun_a10=y$' .config \
+            || { echo "ERROR: device jiyun_a10 not selected - did prepare.sh fail to append the recipe?"; exit 1; }
+          grep -q '^CONFIG_PACKAGE_kmod-dsa-rtl8365mb=y$' .config \
+            || { echo "ERROR: kmod-dsa-rtl8365mb not selected - the image would have no switch driver"; exit 1; }
+          echo "jiyun_a10 + kmod-dsa-rtl8365mb OK"
 
       - name: Download packages
         timeout-minutes: 60

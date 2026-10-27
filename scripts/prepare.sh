@@ -54,11 +54,19 @@ install -m 0755 "$ROOT/files/mk-emmc-img.py" "$LEDE/scripts/mk-emmc-img.py"
 # ---------------------------------------------------------------------------
 # 4. kernel config fragment
 #
-# target/linux/generic/config-6.x explicitly disables the swconfig core, the
-# RTL8367B PHY driver and the DSA core, which overrides .config - flip those
-# lines so the switch driver is really built in.
+# target/linux/generic/config-6.x sets the DSA core to "not set", which
+# overrides .config and leaves every switch port dead. Flip exactly the four
+# DSA symbols.
+#
+# The swconfig trio (SWCONFIG / RTL8366_SMI / RTL8367B_PHY) is deliberately not
+# touched: the board runs the mainline DSA driver (kmod-dsa-rtl8365mb, see the
+# DTS), so the out-of-tree rtl8367b swconfig driver is not needed and is left
+# off. Nothing is injected into target/linux/generic/files either - the only
+# generic patch that used to carry this board was the RTL8367S backport
+# (900-net-phy-add-rtl8367s.patch), which had to be re-checked on every kernel
+# bump and was a standing "does not apply" risk.
 # ---------------------------------------------------------------------------
-say "enable switch drivers in the generic kernel config"
+say "enable DSA in the generic kernel config"
 KCFG="$LEDE/target/linux/generic/config-6.18"
 if [ ! -f "$KCFG" ]; then
 	KCFG=$(ls "$LEDE"/target/linux/generic/config-6.* 2>/dev/null | head -1)
@@ -66,71 +74,64 @@ fi
 [ -f "$KCFG" ] || { echo "no target/linux/generic/config-6.* in $LEDE" >&2; exit 1; }
 
 sed \
-	-e 's/^# CONFIG_SWCONFIG is not set/CONFIG_SWCONFIG=y/' \
-	-e 's/^# CONFIG_RTL8366_SMI is not set/CONFIG_RTL8366_SMI=y/' \
-	-e 's/^# CONFIG_RTL8367B_PHY is not set/CONFIG_RTL8367B_PHY=y/' \
 	-e 's/^# CONFIG_NET_SWITCHDEV is not set/CONFIG_NET_SWITCHDEV=y/' \
 	-e 's/^# CONFIG_NET_DSA is not set/CONFIG_NET_DSA=y/' \
 	-e 's/^# CONFIG_NET_DSA_REALTEK is not set/CONFIG_NET_DSA_REALTEK=m/' \
 	-e 's/^# CONFIG_NET_DSA_TAG_RTL8_4 is not set/CONFIG_NET_DSA_TAG_RTL8_4=m/' \
 	"$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
-grep -E '^CONFIG_(SWCONFIG|RTL8366_SMI|RTL8367B_PHY|NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$KCFG" || {
-	echo "ERROR: could not enable the switch drivers in $KCFG" >&2
+grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$KCFG" || {
+	echo "ERROR: could not enable DSA in $KCFG" >&2
 	exit 1
 }
 
 # ---------------------------------------------------------------------------
-# 5. RTL8367S driver backport
+# 5. drop generic patches that cannot apply here
 #
-# The RTL8367S support (compatible "realtek,rtl8367s", cpu_port 7) is not in
-# coolsnowwolf/lede yet - take the updated, GPL-licensed rtl8367b/rtl8367
-# driver from the working NSY G68 Plus tree.
+# A generic patch that stops applying takes the whole build down inside
+# toolchain/kernel-headers, ~30 minutes in, before anything board specific is
+# compiled (#47-#51). LEDE master moves daily, so build.yml pins the tree; this
+# is the list of series that still has to go because the hardware is not on
+# this board.
+#
+# The MxL862xx switch spans BOTH generic series: backport-6.18 carries the
+# driver (762/764-780) and pending-6.18 the follow-ups (760-0x) that patch the
+# files the backport creates. Dropping one half only moves the error one patch
+# down the list (#49 -> #50 -> #51), so both halves go, matched by name and
+# then by the directory they touch.
 # ---------------------------------------------------------------------------
-say "install RTL8367S driver backport"
+say "drop patches for hardware this board does not have"
+shopt -s nullglob
+
 KVER="${KCFG##*config-}"
 BP_DIR="$LEDE/target/linux/generic/backport-$KVER"
 [ -d "$BP_DIR" ] || BP_DIR=$(ls -d "$LEDE"/target/linux/generic/backport-6.* | tail -1)
+# derived from BP_DIR, not KVER, so the pair stays in step when the fallback
+# above picks a different series
+PEND_DIR="${BP_DIR%backport-*}pending-${BP_DIR##*backport-}"
+echo "generic patch dirs: $BP_DIR $PEND_DIR"
 
-PHY_DIR="$LEDE/target/linux/generic/files/drivers/net/phy"
-INC_DIR="$LEDE/target/linux/generic/files/include/linux"
-mkdir -p "$PHY_DIR" "$INC_DIR" "$BP_DIR"
-install -m 0644 "$ROOT"/kernel/files/drivers/net/phy/rtl8367.c \
-	"$ROOT"/kernel/files/drivers/net/phy/rtl8367b.c \
-	"$ROOT"/kernel/files/drivers/net/phy/rtl8366_smi.c \
-	"$ROOT"/kernel/files/drivers/net/phy/rtl8366_smi.h "$PHY_DIR/"
-install -m 0644 "$ROOT/kernel/files/include/linux/rtl8367.h" "$INC_DIR/"
-install -m 0644 "$ROOT/kernel/backport-$KVER/900-net-phy-add-rtl8367s.patch" "$BP_DIR/" \
-	2>/dev/null || install -m 0644 "$ROOT"/kernel/backport-6.18/900-net-phy-add-rtl8367s.patch "$BP_DIR/"
-echo "backport dir: $BP_DIR"
-
-# ---------------------------------------------------------------------------
-# 6. drop upstream backports that no longer apply
-#
-# LEDE master tracks the mainline kernel closely, and a generic backport that
-# stops applying takes the whole build down at toolchain/kernel-headers (before
-# anything target specific is even compiled). Only patches that are irrelevant
-# to RK3568 belong on this list; re-check it when the kernel version bumps.
-#
-# The whole MxL862xx DSA series (762/764-780) is one moving target: 771 was
-# fixed in one run, 775 failed in the next (#49, #50), 776-780 will follow.
-# The switch is irrelevant to this board, so drop the series by name pattern
-# instead of playing whack-a-mole with individual patches.
-# ---------------------------------------------------------------------------
-say "drop stale upstream backports"
-shopt -s nullglob
-for f in "$BP_DIR"/*[mM]x[lL]862xx*.patch; do
-	echo "removing $(basename "$f") (MxL862xx DSA series; does not apply to the current kernel and is not on this board)"
-	rm -f "$f"
+for d in "$BP_DIR" "$PEND_DIR"; do
+	for f in "$d"/*[mM]x[lL]862xx*.patch; do
+		echo "removing $(basename "$d")/$(basename "$f") (MxL862xx DSA series; not on this board)"
+		rm -f "$f"
+	done
+	# a follow-up patch may not carry "mxl" in its file name but still edits
+	# drivers/net/dsa/mxl862xx/ -> "No file to patch" once the driver is gone
+	for f in "$d"/*.patch; do
+		if grep -qE '^(\+\+\+|---) [ab]/drivers/net/dsa/mxl862xx/' "$f"; then
+			echo "removing $(basename "$d")/$(basename "$f") (touches the mxl862xx driver)"
+			rm -f "$f"
+		fi
+	done
 done
 
 # ---------------------------------------------------------------------------
-# 7. rootfs overlay (target base-files)
+# 6. rootfs overlay (target base-files)
 # ---------------------------------------------------------------------------
 say "install rootfs overlay"
 BASE="$LEDE/target/linux/rockchip/base-files"
 
-# switch configuration (CPU port into the LAN VLAN): the rtl8367b swconfig
-# driver does not do that itself
+# network defaults: br-lan over the DSA ports lan1/2/3, wan, CID-derived MACs
 mkdir -p "$BASE/etc/uci-defaults"
 install -m 0755 "$ROOT/files/99-jiyun-net" "$BASE/etc/uci-defaults/99-jiyun-net"
 

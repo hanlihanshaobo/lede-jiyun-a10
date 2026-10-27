@@ -27,7 +27,7 @@ tools/mkfit.py                  repack kernel+DTB into the stock (data-position)
 tools/mk-spi-img.py             loader + u-boot + FIT -> SPI NOR flashing image
 tools/extract_stock_eeprom.py   pull the EEPROM out of a SPI NOR backup
 tools/rkdeveloptool             macOS build
-kernel/                         RTL8367S driver backport (compiled in; the DSA driver is what runs)
+kernel/                         RTL8367S swconfig driver sources (reference only, NOT injected - DSA runs)
 ```
 
 ## Local build

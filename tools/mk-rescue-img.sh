@@ -6,13 +6,15 @@
 # Why:
 #   * the maskrom/usbplug path can only reach LBA < 65536 (32 MiB); anything
 #     beyond that is silently dropped, even though "wl" reports 100 %,
-#   * the full image is ~257 MiB, so it can never be written in one go,
-#   * but a *stripped* rootfs (no LuCI, no python3, no nmap/3proxy/vsftpd,
-#     no docs) fits in ~20 MiB.
+#   * the full image is ~257 MiB, so it can never be written in one pass,
+#   * but a rootfs without LuCI / python3 / nmap / ... fits in ~20 MiB.
 #
-# The rescue image boots exactly like the full one (same kernel from the SPI
-# NOR FIT, same uci-defaults, same wifi calibration) and gives us an SSH
-# shell - which is all we need to dd the full image from a running system.
+# The stripping is done per package, using the file lists that opkg keeps in
+# /usr/lib/opkg/info/*.list - that is precise, unlike guessing directory
+# names.  Kernel modules, uci/ubus/netifd, dropbear and the uci-defaults
+# (which set up the DSA ports and the MACs) are all kept, so the rescue
+# system boots into a normal OpenWrt with an SSH shell.  From there the full
+# image can be dd'ed from a running system.
 #
 #   usage: mk-rescue-img.sh <emmc.img> <out-rescue.img>
 #
@@ -34,50 +36,62 @@ trap 'sudo umount "$WORK/mnt" 2>/dev/null || true; sudo rm -rf "$WORK"' EXIT
 
 say() { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
 
+# packages that are not needed to bring the router back; everything that is
+# not listed here stays
+DROP_RE='^(python3.*|python3|lua.*|luci.*|rpcd-mod-.*|rpcd-luci.*|ssr.*|nmap|3proxy|vsftpd|ddns.*|ntp.*|minidlna|transmission.*|aria2.*|opkg|ip-full|ip-tiny|iw.*|iperf.*|htop|nano|vim.*|luci-app-.*)$'
+
 # --- 1. split the image: MBR (1 MiB) + rootfs ------------------------------
 say "split $SRC"
 dd if="$SRC" of="$WORK/mbr.bin" bs=1M count=1 status=none
 dd if="$SRC" of="$WORK/root-full.ext4" bs=1M skip=1 status=none
-ls -l "$WORK/mbr.bin" "$WORK/root-full.ext4"
 
-# --- 2. mount and strip -----------------------------------------------------
-say "mount rootfs and drop the fat"
+# --- 2. mount ---------------------------------------------------------------
+say "mount rootfs"
 sudo mkdir -p "$WORK/mnt"
 sudo mount -o loop "$WORK/root-full.ext4" "$WORK/mnt"
+MNT="$WORK/mnt"
 
 echo "-- top level usage (KiB):"
-sudo du -sk "$WORK/mnt"/* 2>/dev/null | sort -n | tail -12
+sudo du -sk "$MNT"/* 2>/dev/null | sort -n | tail -10
 
-# the globs have to be expanded by the privileged shell, they live inside
-# the mounted tree
+# --- 3. strip package by package ------------------------------------------
+say "strip packages matching: $DROP_RE"
 sudo bash -c '
 set -e
 mnt="$1"
-for p in \
-    www \
-    usr/lib/lua usr/share/lua \
-    usr/lib/python3 usr/lib/python3.* usr/libexec/python3 \
-    usr/bin/python3 usr/bin/python3.* \
-    usr/share/man usr/share/doc usr/share/nmap \
-    usr/bin/nmap usr/bin/3proxy usr/sbin/nmap usr/sbin/3proxy \
-    usr/share/vsftpd usr/share/ddns-scripts \
-    usr/lib/opkg
-do
-    [ -e "$mnt/$p" ] || continue
-    echo "   drop $p"
-    rm -rf "$mnt/$p"
+re="$2"
+info="$mnt/usr/lib/opkg/info"
+[ -d "$info" ] || exit 0
+for list in "$info"/*.list; do
+    [ -e "$list" ] || continue
+    pkg=$(basename "$list" .list)
+    if echo "$pkg" | grep -Eq "$re"; then
+        echo "   drop $pkg"
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            rm -rf "$mnt/${f#/}"
+        done < "$list"
+        rm -f "$list"
+    fi
 done
-' _ "$WORK/mnt"
+# the opkg status db is not needed anymore (and it is big)
+rm -f "$mnt/usr/lib/opkg/status"
+' _ "$MNT" "$DROP_RE"
 
+say "usage after stripping"
+sudo du -sk "$MNT"/* 2>/dev/null | sort -n | tail -10
+sudo du -sk "$MNT"/usr/* 2>/dev/null | sort -n | tail -8
+
+# --- 4. copy the stripped tree out ----------------------------------------
 say "copy the stripped tree out"
 sudo mkdir -p "$WORK/tree"
-sudo cp -a "$WORK/mnt/." "$WORK/tree/"
-sudo umount "$WORK/mnt"
+sudo cp -a "$MNT/." "$WORK/tree/"
+sudo umount "$MNT"
 
 USED_KB=$(sudo du -sk "$WORK/tree" | cut -f1)
 say "stripped tree: ${USED_KB} KiB"
 
-# --- 3. pack it into a fresh ext4 -----------------------------------------
+# --- 5. pack it into a fresh ext4 -----------------------------------------
 # +2 MiB for the metadata, at least 24 MiB, and never more than what the
 # maskrom window can hold (minus the 1 MiB MBR).
 SIZE_MB=$((USED_KB / 1024 + 2))
@@ -85,6 +99,8 @@ SIZE_MB=$((USED_KB / 1024 + 2))
 MAX_MB=$(( (WINDOW / 1024 / 1024) - 1 ))
 if [ "$SIZE_MB" -gt "$MAX_MB" ]; then
     echo "ERROR: stripped rootfs still needs ${SIZE_MB} MiB, maskrom window allows ${MAX_MB} MiB" >&2
+    echo "-- biggest leftovers:" >&2
+    sudo du -sk "$WORK/tree"/usr/* 2>/dev/null | sort -n | tail -12 >&2
     exit 1
 fi
 

@@ -238,11 +238,23 @@ jobs:
           fi
 
           if [ "$WANT_EMMC" = 1 ]; then
-            # produced by Build/jiyun-a10-emmc-img
-            EMMC=$(find lede/bin/targets -name "*jiyun*-emmc.img" | head -1)
+            # produced by Build/jiyun-a10-emmc-img. image.mk names it
+            #   openwrt-rockchip-armv8-jiyun_a10-<fs>-<image>
+            # i.e. "-ext4-emmc.img", and appends ".gz" because the rootfs
+            # filesystem is ext4 and CONFIG_TARGET_IMAGES_GZIP is on (#53 died
+            # here: the old pattern only matched "*jiyun*-emmc.img").
+            EMMC=$(find lede/bin/targets -name "*jiyun*emmc.img*" | head -1)
             test -n "$EMMC" || { echo "emmc.img was not produced"; \
               find lede/bin/targets -type f; exit 1; }
-            cp -v "$EMMC" output/jiyun-a10-emmc.img
+            echo "emmc image: $EMMC"
+            # hand the packaging job a plain image, so its contract check can
+            # read the MBR without knowing how image.mk compressed it
+            case "$EMMC" in
+              *.gz) gunzip -c "$EMMC" > output/jiyun-a10-emmc.img ;;
+              *)    cp -v "$EMMC" output/jiyun-a10-emmc.img ;;
+            esac
+            test "$(wc -c < output/jiyun-a10-emmc.img | tr -d ' ')" -gt 268435456 \
+              || { echo "emmc.img is too small: $(wc -c < output/jiyun-a10-emmc.img)"; exit 1; }
           fi
           ls -al output
 

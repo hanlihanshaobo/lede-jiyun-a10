@@ -446,16 +446,20 @@ jobs:
           have kmods that do not match the running kernel.
           EOF
 
-          if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest $IMGS --clobber
-            gh release edit latest \
+          # This job never checks out the tree, so gh has no git remote to infer
+          # the repository from: every call needs an explicit --repo, otherwise
+          # it dies with "failed to run git: fatal: not a git repository" (#54).
+          if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload latest $IMGS --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit latest --repo "$GITHUB_REPOSITORY" \
               --title "Jiyun A10 — latest firmware" \
               --notes-file notes.md --latest
           else
-            gh release create latest $IMGS \
+            gh release create latest $IMGS --repo "$GITHUB_REPOSITORY" \
               --title "Jiyun A10 — latest firmware" \
               --notes-file notes.md --latest
           fi
 
           echo "published:"
-          gh release view latest --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'
+          gh release view latest --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'

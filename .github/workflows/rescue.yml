@@ -1,0 +1,69 @@
+name: Build Jiyun A10 rescue image
+# ---------------------------------------------------------------------------
+# The maskrom rockusb path can only reach LBA < 65536 (32 MiB), so the full
+# 257 MiB eMMC image can never be written in one pass. This workflow cuts the
+# rootfs down to something that *does* fit (no LuCI / python3 / nmap / ...),
+# which boots into a normal OpenWrt with an SSH shell - from there the full
+# image can be dd'ed from a running system.
+#
+# It only needs the "latest" release asset, so it runs in ~2 minutes.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/rescue.yml"
+      - "tools/mk-rescue-img.sh"
+
+jobs:
+  rescue:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout build recipes
+        uses: actions/checkout@v4
+
+      - name: Download the latest eMMC image
+        run: |
+          set -eux
+          curl -sL -o emmc.img \
+            "https://github.com/${{ github.repository }}/releases/download/latest/jiyun-a10-emmc.img"
+          ls -l emmc.img
+
+      - name: Build the rescue image
+        run: |
+          set -eux
+          chmod +x tools/mk-rescue-img.sh
+          sudo ./tools/mk-rescue-img.sh emmc.img jiyun-a10-rescue.img
+          ls -l jiyun-a10-rescue.img
+
+      - name: Contract check
+        run: |
+          set -eux
+          SZ=$(stat -c%s jiyun-a10-rescue.img)
+          test "$SZ" -le 33554432 || { echo "too big for the maskrom window: $SZ"; exit 1; }
+          python3 - <<'PY'
+          m = open('jiyun-a10-rescue.img', 'rb').read(512)
+          assert m[510:512] == b'\x55\xaa', 'MBR signature missing'
+          assert int.from_bytes(m[454:458], 'little') == 2048, 'p1 must start at LBA 2048'
+          assert m[450] == 0x83, 'p1 must be type 0x83 (Linux)'
+          print('rescue layout OK')
+          PY
+
+      - name: Upload rescue image
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiyun-a10-rescue
+          path: jiyun-a10-rescue.img
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish to the rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          gh release upload latest jiyun-a10-rescue.img \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view latest --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'

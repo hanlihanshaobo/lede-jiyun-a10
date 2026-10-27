@@ -40,6 +40,11 @@ say() { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
 # not listed here stays
 DROP_RE='^(python3.*|python3|lua.*|luci.*|rpcd-mod-.*|rpcd-luci.*|ssr.*|nmap|3proxy|vsftpd|ddns.*|ntp.*|minidlna|transmission.*|aria2.*|opkg|ip-full|ip-tiny|iw.*|iperf.*|htop|nano|vim.*|luci-app-.*)$'
 
+# kernel modules the rescue system needs: the DSA switch driver of the
+# RTL8365MB and the MT7916 wifi - the dependency closure is resolved from
+# modules.dep
+KEEP_MODULES='(rtl8365mb|mt7915e|mt7916e|mt76-core|mt76-connac|dsa)'
+
 # --- 1. split the image: MBR (1 MiB) + rootfs ------------------------------
 say "split $SRC"
 dd if="$SRC" of="$WORK/mbr.bin" bs=1M count=1 status=none
@@ -81,6 +86,59 @@ rm -f "$mnt/usr/lib/opkg/status"
 say "usage after stripping"
 sudo du -sk "$MNT"/* 2>/dev/null | sort -n | tail -10
 sudo du -sk "$MNT"/usr/* 2>/dev/null | sort -n | tail -8
+echo "-- module directory:"
+sudo du -sk "$MNT"/usr/lib/modules "$MNT"/lib/modules 2>/dev/null | sort -n | tail -4
+
+# --- 3b. keep only the kernel modules we actually need ---------------------
+# The kernel modules are the biggest chunk (~23 MiB).  A rescue system only
+# needs the DSA switch driver (rtl8365mb) and the MT7916 wifi, plus whatever
+# they depend on - the dependency closure is taken from modules.dep, so
+# nothing is left dangling.
+say "trim kernel modules to the closure of: $KEEP_MODULES"
+sudo bash -c '
+set -e
+mnt="$1"
+keep_re="$2"
+for md in "$mnt"/usr/lib/modules/* "$mnt"/lib/modules/*; do
+    [ -d "$md" ] || continue
+    dep="$md/modules.dep"
+    [ -f "$dep" ] || continue
+    echo "   module dir: $md"
+    # collect the wanted roots and their dependency closure
+    awk -v re="$keep_re" "
+        { split(\$0, a, \":\"); split(a[2], d, \" \");
+          line=\$0; mod=a[1]
+          if (mod ~ re) { print line }
+        }" "$dep" > "$md/.keep"
+    # expand: a kept module pulls in its dependencies
+    changed=1
+    while [ $changed -eq 1 ]; do
+        changed=0
+        while IFS= read -r line; do
+            mod=${line%%:*}
+            deps=${line#*:}
+            for d in $deps; do
+                grep -q "^$d:" "$md/.keep" || { echo "$d: " >> "$md/.keep"; changed=1; }
+            done
+        done < "$md/.keep"
+    done
+    # delete every module that is not in the closure
+    find "$md" -name "*.ko" | while read -r ko; do
+        rel=${ko#"$md"/}
+        if ! grep -q "^$rel:" "$md/.keep"; then
+            rm -f "$ko"
+        fi
+    done
+    # rewrite modules.dep with the surviving entries
+    grep -F -f <(cut -d: -f1 "$md/.keep" | sed "s/$/:/") "$dep" > "$dep.new" 2>/dev/null || true
+    [ -s "$dep.new" ] && mv "$dep.new" "$dep" || rm -f "$dep.new"
+    rm -f "$md/.keep"
+    du -sk "$md"
+done
+' _ "$MNT" "$KEEP_MODULES"
+
+say "usage after module trim"
+sudo du -sk "$MNT"/* 2>/dev/null | sort -n | tail -10
 
 # --- 4. copy the stripped tree out ----------------------------------------
 say "copy the stripped tree out"

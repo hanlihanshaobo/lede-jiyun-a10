@@ -144,6 +144,30 @@ jobs:
             || { echo "ERROR: kmod-dsa-rtl8365mb not selected - the image would have no switch driver"; exit 1; }
           echo "jiyun_a10 + kmod-dsa-rtl8365mb OK"
 
+      # Apply the kernel patch series on its own, before the 40+ minute build.
+      # A stale upstream patch used to surface ~30 minutes into "Build", behind
+      # a log that needs a GitHub login; here the same failure is a few minutes
+      # in, with the patch output in the step log (#47-#52 were all this).
+      - name: Preflight kernel patches
+        timeout-minutes: 30
+        run: |
+          cd lede
+          set -o pipefail
+          if make target/linux/prepare V=s 2>&1 | tee /tmp/kernel-prepare.log; then
+            echo "all kernel patches applied"
+            exit 0
+          fi
+
+          { echo '### kernel patches failed'; echo '```'
+            grep -B9 -m1 '\*\*\* \[' /tmp/kernel-prepare.log || tail -20 /tmp/kernel-prepare.log
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+          grep -B9 -m1 '\*\*\* \[' /tmp/kernel-prepare.log > /tmp/ctx || tail -12 /tmp/kernel-prepare.log > /tmp/ctx
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done < /tmp/ctx
+          exit 1
+
       - name: Download packages
         timeout-minutes: 60
         run: |

@@ -98,6 +98,11 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$
 # files the backport creates. Dropping one half only moves the error one patch
 # down the list (#49 -> #50 -> #51), so both halves go, matched by name and
 # then by the directory they touch.
+#
+# The series is also load bearing for other patches: target/linux/rockchip/
+# patches-6.18/0130 (Motorcomm YT921x) inserts its DSA tag numbers *after* the
+# MXL862 defines, so it cannot apply once the series is gone (#52). That driver
+# is not on this board either, so anything still referring to it goes too.
 # ---------------------------------------------------------------------------
 say "drop patches for hardware this board does not have"
 shopt -s nullglob
@@ -124,6 +129,22 @@ for d in "$BP_DIR" "$PEND_DIR"; do
 		fi
 	done
 done
+
+# target patches that only made sense on top of the removed series: 0130
+# (Motorcomm YT921x) adds DSA_TAG_PROTO_YT921X right after the MXL862 tag
+# values, so both of its include/net/dsa.h hunks are rejected once they are
+# gone. Match on the dependency, not on the file name, so a rebased/renamed
+# patch is caught as well.
+RK_PDIR="$LEDE/target/linux/rockchip/patches-$KVER"
+[ -d "$RK_PDIR" ] || RK_PDIR=$(ls -d "$LEDE"/target/linux/rockchip/patches-6.* 2>/dev/null | tail -1)
+if [ -n "${RK_PDIR:-}" ] && [ -d "$RK_PDIR" ]; then
+	for f in "$RK_PDIR"/*.patch; do
+		if grep -q 'MXL862' "$f"; then
+			echo "removing $(basename "$RK_PDIR")/$(basename "$f") (context depends on the MxL862xx tag ids)"
+			rm -f "$f"
+		fi
+	done
+fi
 
 # ---------------------------------------------------------------------------
 # 6. rootfs overlay (target base-files)

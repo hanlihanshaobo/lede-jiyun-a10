@@ -1,0 +1,653 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# Apply /etc/config/multiwifi.
+#
+# One SSID -> one bridge/subnet -> one PassWall2 ACL rule.
+# Only sections prefixed with "mws_" are created or removed; everything else
+# in network/dhcp/firewall/wireless/passwall2 is left alone.
+# ---------------------------------------------------------------------------
+set -eu
+
+CONFIG=multiwifi
+PREFIX=mws_
+STATE=/tmp/multiwifi
+BACKUP_ROOT=/etc/multiwifi/backup
+LOG=/tmp/multiwifi-apply.log
+DEFAULT_SUBNET_BASE=192.168.80.0/24
+
+MODE=${1:-apply}
+BACKUP_MADE=0
+APPLY_OK=0
+
+mkdir -p "$STATE" "$BACKUP_ROOT"
+: > "$LOG"
+exec >> "$LOG" 2>&1
+
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+die() { log "ERROR: $*"; exit 1; }
+
+uci_get() {
+	uci -q get "$1" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# backup / restore
+# ---------------------------------------------------------------------------
+backup_configs() {
+	local ts dir c i d
+	ts=$(date +%Y%m%d-%H%M%S)
+	dir="$BACKUP_ROOT/$ts"
+	mkdir -p "$dir"
+	for c in network dhcp firewall wireless passwall2; do
+		[ -f "/etc/config/$c" ] && cp -f "/etc/config/$c" "$dir/$c"
+	done
+	[ -f "$STATE/prev-multiwifi" ] && cp -f "$STATE/prev-multiwifi" "$dir/multiwifi.prev"
+	echo "$dir" > "$STATE/last-backup"
+	BACKUP_MADE=1
+	log "已备份配置到 $dir"
+
+	i=0
+	for d in $(ls -1dt "$BACKUP_ROOT"/* 2>/dev/null); do
+		i=$((i + 1))
+		[ "$i" -gt 5 ] && rm -rf "$d" || true
+	done
+	return 0
+}
+
+reload_services() {
+	log "重载网络 / 无线 / 防火墙 / PassWall2"
+	if command -v wifi >/dev/null 2>&1; then
+		wifi reload >/dev/null 2>&1 || wifi up >/dev/null 2>&1 || true
+	fi
+	ubus call network reload >/dev/null 2>&1 || true
+	if command -v fw4 >/dev/null 2>&1; then
+		fw4 reload >/dev/null 2>&1 || true
+	else
+		/etc/init.d/firewall reload >/dev/null 2>&1 || true
+	fi
+	if [ -x /etc/init.d/passwall2 ]; then
+		/etc/init.d/passwall2 restart >/dev/null 2>&1 || true
+	fi
+	sleep 1
+}
+
+restore_configs() {
+	local dir c
+	dir=$(cat "$STATE/last-backup" 2>/dev/null || true)
+	[ -n "$dir" ] && [ -d "$dir" ] || { log "没有可恢复的备份"; return 1; }
+
+	[ -f "$dir/multiwifi.prev" ] && cp -f "$dir/multiwifi.prev" "/etc/config/multiwifi"
+	for c in network dhcp firewall wireless passwall2; do
+		[ -f "$dir/$c" ] && cp -f "$dir/$c" "/etc/config/$c"
+	done
+	for c in multiwifi network dhcp firewall wireless passwall2; do
+		[ -f "/etc/config/$c" ] && uci -q commit "$c" || true
+	done
+	log "已恢复 $dir"
+	reload_services
+}
+
+on_exit() {
+	local rc=$?
+	if [ "$APPLY_OK" != "1" ] && [ "$BACKUP_MADE" = "1" ]; then
+		log "应用失败，开始回滚"
+		restore_configs || true
+	fi
+	exit "$rc"
+}
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+ssid_sections() {
+	uci -q show "$CONFIG" | sed -n "s/^$CONFIG\.\([^.=]*\)=ssid$/\1/p"
+}
+
+# Keep the generated bridge name below IFNAMSIZ (15 chars):
+#   mws_ + 6 hex = 10, br-mws_xxxxxx = 13
+make_net() {
+	local sid="$1" h
+	if command -v md5sum >/dev/null 2>&1; then
+		h=$(printf '%s' "$sid" | md5sum | cut -c1-6)
+	else
+		h=$(printf '%s' "$sid" | cksum | cut -d' ' -f1)
+		h=$(printf '%06x' "$h" 2>/dev/null || echo "$h")
+	fi
+	echo "${PREFIX}${h}"
+}
+
+# x.x.x.x/24 -> "a b c d"
+parse_net24() {
+	local value ip mask a b c d n
+	value="$1"
+	case "$value" in
+		*/*) ;;
+		*) return 1 ;;
+	esac
+	ip=${value%/*}
+	mask=${value#*/}
+	[ "$mask" = "24" ] || return 1
+	a=$(echo "$ip" | cut -d. -f1)
+	b=$(echo "$ip" | cut -d. -f2)
+	c=$(echo "$ip" | cut -d. -f3)
+	d=$(echo "$ip" | cut -d. -f4)
+	for n in "$a" "$b" "$c" "$d"; do
+		case "$n" in
+			''|*[!0-9]*) return 1 ;;
+		esac
+		[ "$n" -le 255 ] || return 1
+	done
+	echo "$a $b $c $d"
+}
+
+collect_existing_nets() {
+	local iface ip net
+	USED_NETS=""
+	for iface in $(uci -q show network | sed -n 's/^network\.\([^.]*\)=interface$/\1/p'); do
+		case "$iface" in
+			$PREFIX*) continue ;;
+		esac
+		ip=$(uci_get "network.$iface.ipaddr")
+		[ -n "$ip" ] || continue
+		net=$(echo "$ip" | cut -d. -f1-3)
+		case "$net" in
+			''|*[!0-9.]*) continue ;;
+		esac
+		USED_NETS="$USED_NETS $net"
+	done
+	return 0
+}
+
+net3_in_use() {
+	case " $USED_NETS " in
+		*" $1 "*) return 0 ;;
+	esac
+	return 1
+}
+
+radio_for_band() {
+	local want r b hw
+	want="$1"
+	for r in $(uci -q show wireless | sed -n 's/^wireless\.\([^.]*\)=wifi-device$/\1/p'); do
+		b=$(uci_get "wireless.$r.band")
+		hw=$(uci_get "wireless.$r.hwmode")
+		if [ "$want" = "2g" ]; then
+			case "$b" in
+				2g|2.4g|bg) echo "$r"; return 0 ;;
+			esac
+			case "$hw" in
+				11g|11b|11ng) echo "$r"; return 0 ;;
+			esac
+		else
+			case "$b" in
+				5g) echo "$r"; return 0 ;;
+			esac
+			case "$hw" in
+				11a|11na|11ac|11ax) echo "$r"; return 0 ;;
+			esac
+		fi
+	done
+	if [ "$want" = "2g" ] && [ "$(uci_get wireless.radio0)" = "wifi-device" ]; then
+		echo radio0
+		return 0
+	fi
+	if [ "$want" = "5g" ] && [ "$(uci_get wireless.radio1)" = "wifi-device" ]; then
+		echo radio1
+		return 0
+	fi
+	return 1
+}
+
+detect_acl_schema() {
+	ACL_SCHEMA=""
+	ACL_CIDR=0
+	if [ -f /usr/share/passwall2/app_acl.lua ]; then
+		if grep -q 'acl_rule' /usr/share/passwall2/app_acl.lua; then
+			ACL_SCHEMA=acl_rule
+			ACL_CIDR=1
+		else
+			ACL_SCHEMA=acl
+			ACL_CIDR=0
+		fi
+	fi
+	return 0
+}
+
+# ---------------------------------------------------------------------------
+# UCI writers
+# ---------------------------------------------------------------------------
+write_wifi() {
+	local w="$1" dev="$2" ssid="$3" enc="$4" key="$5" net="$6" isolate="$7" enabled="$8"
+	local typ
+	typ=$(uci_get "wireless.$w")
+	if [ -z "$typ" ]; then
+		uci -q set "wireless.$w=wifi-iface"
+	elif [ "$typ" != "wifi-iface" ]; then
+		die "wireless.$w 已存在且不是 wifi-iface"
+	fi
+	uci -q set "wireless.$w.device=$dev"
+	uci -q set "wireless.$w.network=$net"
+	uci -q set "wireless.$w.mode=ap"
+	uci -q set "wireless.$w.ssid=$ssid"
+	uci -q set "wireless.$w.encryption=$enc"
+	if [ "$enc" = "none" ]; then
+		uci -q delete "wireless.$w.key" || true
+	else
+		uci -q set "wireless.$w.key=$key"
+	fi
+	uci -q set "wireless.$w.isolate=$isolate"
+	uci -q set "wireless.$w.disabled=$([ "$enabled" = "1" ] && echo 0 || echo 1)"
+	uci -q delete "wireless.$w.ifname" || true
+	return 0
+}
+
+set_acl_dns_defaults() {
+	local net="$1" opt val
+	for opt in direct_dns_query_strategy remote_dns_protocol remote_dns remote_dns_doh remote_dns_detour remote_fakedns remote_dns_query_strategy remote_rewrite_ttl; do
+		val=$(uci_get "passwall2.@global[0].$opt")
+		case "$opt:$val" in
+			direct_dns_query_strategy:) val=UseIP ;;
+			remote_dns_protocol:) val=tcp ;;
+			remote_dns:) val=1.1.1.1 ;;
+			remote_dns_doh:) val=https://1.1.1.1/dns-query ;;
+			remote_dns_detour:) val=remote ;;
+			remote_fakedns:) val=0 ;;
+			remote_dns_query_strategy:) val=UseIPv4 ;;
+			remote_rewrite_ttl:) val=30 ;;
+		esac
+		[ -n "$val" ] && uci -q set "passwall2.$net.$opt=$val"
+	done
+	return 0
+}
+
+apply_row() {
+	local sid="$1" ssid="$2" band="$3" gw="$4" cidr="$5" mode="$6" node="$7" enabled="$8" enc="$9" key="${10}" isolate="${11}"
+	local net w typ fwd wifi_enabled acl_enabled src base3
+
+	[ "$gw" = "-" ] && gw=""
+	[ "$cidr" = "-" ] && cidr=""
+	[ "$key" = "-" ] && key=""
+	[ "$node" = "-" ] && node=""
+
+	net=$(make_net "$sid")
+	if [ "$GLOBAL_ENABLED" = "1" ] && [ "$enabled" = "1" ]; then
+		wifi_enabled=1
+	else
+		wifi_enabled=0
+	fi
+	acl_enabled=$wifi_enabled
+
+	# network ---------------------------------------------------------------
+	typ=$(uci_get "network.$net")
+	if [ -z "$typ" ]; then
+		uci -q set "network.$net=interface"
+	elif [ "$typ" != "interface" ]; then
+		die "network.$net 已存在且不是 interface"
+	fi
+	uci -q set "network.$net.proto=static"
+	uci -q set "network.$net.type=bridge"
+	uci -q delete "network.$net.device" || true
+	uci -q set "network.$net.ipaddr=$gw"
+	uci -q set "network.$net.netmask=255.255.255.0"
+	uci -q delete "network.$net.ip6assign" || true
+	uci -q delete "network.$net.ip6hint" || true
+
+	# dhcp ------------------------------------------------------------------
+	typ=$(uci_get "dhcp.$net")
+	if [ -z "$typ" ]; then
+		uci -q set "dhcp.$net=dhcp"
+	elif [ "$typ" != "dhcp" ]; then
+		die "dhcp.$net 已存在且不是 dhcp"
+	fi
+	uci -q set "dhcp.$net.interface=$net"
+	uci -q set "dhcp.$net.start=100"
+	uci -q set "dhcp.$net.limit=150"
+	uci -q set "dhcp.$net.leasetime=12h"
+	uci -q set "dhcp.$net.dhcpv4=server"
+	uci -q set "dhcp.$net.dhcpv6=disabled"
+	uci -q set "dhcp.$net.ra=disabled"
+
+	# firewall --------------------------------------------------------------
+	typ=$(uci_get "firewall.$net")
+	if [ -z "$typ" ]; then
+		uci -q set "firewall.$net=zone"
+	elif [ "$typ" != "zone" ]; then
+		die "firewall.$net 已存在且不是 zone"
+	fi
+	uci -q set "firewall.$net.name=$net"
+	uci -q set "firewall.$net.input=ACCEPT"
+	uci -q set "firewall.$net.output=ACCEPT"
+	uci -q set "firewall.$net.forward=REJECT"
+	uci -q set "firewall.$net.masq=0"
+	uci -q delete "firewall.$net.network" || true
+	uci -q add_list "firewall.$net.network=$net"
+
+	fwd="${net}_fwd"
+	typ=$(uci_get "firewall.$fwd")
+	if [ -z "$typ" ]; then
+		uci -q set "firewall.$fwd=forwarding"
+	elif [ "$typ" != "forwarding" ]; then
+		die "firewall.$fwd 已存在且不是 forwarding"
+	fi
+	uci -q set "firewall.$fwd.src=$net"
+	uci -q set "firewall.$fwd.dest=wan"
+
+	# wireless --------------------------------------------------------------
+	if [ "$band" = "2g" ] || [ "$band" = "both" ]; then
+		w="${net}_24"
+		write_wifi "$w" "$RADIO24" "$ssid" "$enc" "$key" "$net" "$isolate" "$wifi_enabled"
+		EXPECTED_WIFI="$EXPECTED_WIFI $w"
+	fi
+	if [ "$band" = "5g" ] || [ "$band" = "both" ]; then
+		w="${net}_5"
+		write_wifi "$w" "$RADIO5" "$ssid" "$enc" "$key" "$net" "$isolate" "$wifi_enabled"
+		EXPECTED_WIFI="$EXPECTED_WIFI $w"
+	fi
+	if [ "$band" = "2g" ]; then
+		uci -q delete "wireless.${net}_5" || true
+	fi
+	if [ "$band" = "5g" ]; then
+		uci -q delete "wireless.${net}_24" || true
+	fi
+
+	# passwall2 ACL ---------------------------------------------------------
+	if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ]; then
+		typ=$(uci_get "passwall2.$net")
+		if [ -n "$typ" ] && [ "$typ" != "$ACL_SCHEMA" ]; then
+			uci -q delete "passwall2.$net" || true
+			typ=""
+		fi
+		if [ -z "$typ" ]; then
+			uci -q set "passwall2.$net=$ACL_SCHEMA"
+		fi
+		uci -q set "passwall2.$net.enabled=$acl_enabled"
+		uci -q set "passwall2.$net.remarks=MW: $ssid"
+		uci -q set "passwall2.$net.interface=br-$net"
+		uci -q set "passwall2.$net.mode=$mode"
+		uci -q set "passwall2.$net.tcp_redir_ports=1:65535"
+		uci -q set "passwall2.$net.udp_redir_ports=1:65535"
+		uci -q delete "passwall2.$net.tcp_no_redir_ports" || true
+		uci -q delete "passwall2.$net.udp_no_redir_ports" || true
+
+		if [ "$mode" = "1" ]; then
+			uci -q set "passwall2.$net.node=$node"
+		else
+			uci -q delete "passwall2.$net.node" || true
+		fi
+
+		uci -q delete "passwall2.$net.sources" || true
+		if [ "$ACL_CIDR" = "1" ]; then
+			src="$cidr"
+		else
+			base3=${gw%.1}
+			src="$base3.2-$base3.254"
+		fi
+		uci -q add_list "passwall2.$net.sources=$src"
+
+		set_acl_dns_defaults "$net"
+		EXPECTED_ACL="$EXPECTED_ACL $net"
+	fi
+
+	EXPECTED_NET="$EXPECTED_NET $net"
+	EXPECTED_FWD="$EXPECTED_FWD $fwd"
+	return 0
+}
+
+cleanup_cfg() {
+	local cfg="$1" type="$2" expected="$3" s
+	for s in $(uci -q show "$cfg" | sed -n "s/^$cfg\.\(${PREFIX}[^.]*\)=$type$/\1/p"); do
+		case " $expected " in
+			*" $s "*) ;;
+			*) log "删除过期配置 $cfg.$s"; uci -q delete "$cfg.$s" || true ;;
+		esac
+	done
+	return 0
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+if [ "$MODE" = "restore" ]; then
+	restore_configs
+	exit $?
+fi
+if [ "$MODE" != "apply" ]; then
+	echo "usage: $0 [apply|restore]" >&2
+	exit 2
+fi
+
+[ -f "/etc/config/$CONFIG" ] || die "缺少 /etc/config/$CONFIG"
+
+if pidof clash >/dev/null 2>&1 || pidof mihomo >/dev/null 2>&1 || pidof clash_tun >/dev/null 2>&1; then
+	log "WARNING: OpenClash 正在运行，PassWall2 可能和它抢 nftables/DNS"
+fi
+
+GLOBAL_ENABLED=$(uci_get "$CONFIG.@global[0].enabled")
+[ -n "$GLOBAL_ENABLED" ] || GLOBAL_ENABLED=1
+SUBNET_BASE=$(uci_get "$CONFIG.@global[0].subnet_base")
+[ -n "$SUBNET_BASE" ] || SUBNET_BASE=$DEFAULT_SUBNET_BASE
+
+BASE_PARSED=$(parse_net24 "$SUBNET_BASE") || die "自动子网起始格式错误: $SUBNET_BASE"
+set -- $BASE_PARSED
+BASE_A=$1
+BASE_B=$2
+BASE_C=$3
+
+collect_existing_nets
+detect_acl_schema
+
+HAS_PASSWALL2=0
+if [ -f /etc/config/passwall2 ] && [ -n "$(uci_get 'passwall2.@global[0]')" ]; then
+	HAS_PASSWALL2=1
+fi
+
+ROWS="$STATE/rows.$$"
+PLAN="$STATE/plan.$$"
+: > "$ROWS"
+
+BSS24=0
+BSS5=0
+SSID_COUNT=0
+GENERATED_NETS=""
+
+# ---- pass 1: validate and collect -----------------------------------------
+for sid in $(ssid_sections); do
+	net=$(make_net "$sid")
+	case " $GENERATED_NETS " in
+		*" $net "*) die "生成的接口名冲突: $net" ;;
+	esac
+	GENERATED_NETS="$GENERATED_NETS $net"
+
+	ssid=$(uci_get "$CONFIG.$sid.ssid")
+	band=$(uci_get "$CONFIG.$sid.band")
+	enc=$(uci_get "$CONFIG.$sid.encryption")
+	key=$(uci_get "$CONFIG.$sid.key")
+	node=$(uci_get "$CONFIG.$sid.node")
+	enabled=$(uci_get "$CONFIG.$sid.enabled")
+	isolate=$(uci_get "$CONFIG.$sid.isolate")
+	subnet=$(uci_get "$CONFIG.$sid.subnet")
+
+	[ -n "$band" ] || band=2g
+	[ -n "$enc" ] || enc=psk2
+	[ -n "$node" ] || node=__direct__
+	[ -n "$enabled" ] || enabled=1
+	[ -n "$isolate" ] || isolate=1
+
+	# A disabled row is simply absent from the generated config. This keeps
+	# "全部停用" one click even when it contains half-finished rows.
+	if [ "$GLOBAL_ENABLED" != "1" ] || [ "$enabled" != "1" ]; then
+		log "跳过停用 SSID [${ssid:-$sid}]"
+		continue
+	fi
+
+	[ -n "$ssid" ] || die "$sid 缺少 SSID"
+	[ ${#ssid} -le 32 ] || die "$sid 的 SSID 超过 32 字节"
+	case "$band" in
+		2g|5g|both) ;;
+		*) die "$sid 的频段无效: $band" ;;
+	esac
+	case "$enc" in
+		psk2|sae-mixed|none) ;;
+		*) die "$sid 的加密方式无效: $enc" ;;
+	esac
+	if [ "$enc" != "none" ]; then
+		[ ${#key} -ge 8 ] && [ ${#key} -le 63 ] || die "$sid 的密码长度必须为 8-63 位"
+	fi
+
+	case "$node" in
+		''|'__direct__')
+			mode=0
+			node="-"
+			;;
+		'__global__')
+			mode=2
+			node="-"
+			[ "$HAS_PASSWALL2" = "1" ] || die "PassWall2 未初始化，无法跟随全局节点"
+			GLOBAL_NODE=$(uci_get "passwall2.@global[0].node")
+			[ -n "$GLOBAL_NODE" ] && [ "$(uci_get "passwall2.$GLOBAL_NODE")" = "nodes" ] \
+				|| die "PassWall2 未设置有效的全局节点"
+			;;
+		*)
+			mode=1
+			[ "$HAS_PASSWALL2" = "1" ] || die "PassWall2 未初始化，无法使用线路 $node"
+			[ -n "$ACL_SCHEMA" ] || die "未找到 PassWall2 ACL 实现，无法使用线路 $node"
+			[ "$(uci_get "passwall2.$node")" = "nodes" ] || die "PassWall2 线路不存在: $node"
+			if [ "$(uci_get "passwall2.$node.disabled")" = "1" ]; then
+				die "PassWall2 线路已禁用: $node"
+			fi
+			;;
+	esac
+
+	if [ -n "$subnet" ]; then
+		SUBNET_PARSED=$(parse_net24 "$subnet") || die "$sid 的子网格式错误: $subnet"
+		set -- $SUBNET_PARSED
+		sa=$1
+		sb=$2
+		sc=$3
+		sd=$4
+		[ "$sd" = "1" ] || die "$sid 的子网网关必须是 x.x.x.1/24"
+		gw="$sa.$sb.$sc.1"
+		cidr="$sa.$sb.$sc.0/24"
+		net3="$sa.$sb.$sc"
+		if net3_in_use "$net3"; then
+			die "$sid 的子网 $cidr 与现有网络冲突"
+		fi
+		USED_NETS="$USED_NETS $net3"
+	else
+		gw="-"
+		cidr="-"
+	fi
+
+	case "$band" in
+		2g) BSS24=$((BSS24 + 1)) ;;
+		5g) BSS5=$((BSS5 + 1)) ;;
+		both) BSS24=$((BSS24 + 1)); BSS5=$((BSS5 + 1)) ;;
+	esac
+	SSID_COUNT=$((SSID_COUNT + 1))
+
+	[ -n "$key" ] || key="-"
+
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+		"$sid" "$ssid" "$band" "$gw" "$cidr" "$mode" "$node" \
+		"$enabled" "$enc" "$key" "$isolate" >> "$ROWS"
+done
+
+if [ "$SSID_COUNT" -gt 0 ]; then
+	if ! awk -F '\t' '
+		{
+			for (i = 1; i < NR; i++) {
+				if (s[i] == $2) {
+					exit 1
+				}
+			}
+			s[NR] = $2
+		}
+	' "$ROWS"; then
+		die "SSID 重复；同一 SSID 需要双频请只建一行并选择 [双频]"
+	fi
+fi
+
+[ "$BSS24" -le 4 ] || log "WARNING: 2.4G SSID 数量为 $BSS24，建议不超过 4 个"
+[ "$BSS5" -le 8 ] || log "WARNING: 5G SSID 数量为 $BSS5，建议不超过 8 个"
+
+# ---- resolve radios -------------------------------------------------------
+RADIO24=""
+RADIO5=""
+if [ "$BSS24" -gt 0 ]; then
+	RADIO24=$(radio_for_band 2g) || die "找不到 2.4G 射频"
+	log "2.4G 射频: $RADIO24"
+fi
+if [ "$BSS5" -gt 0 ]; then
+	RADIO5=$(radio_for_band 5g) || die "找不到 5G 射频"
+	log "5G 射频: $RADIO5"
+fi
+
+# ---- pass 2: allocate subnets --------------------------------------------
+: > "$PLAN"
+AUTO_C=$BASE_C
+while IFS='	' read -r sid ssid band gw cidr mode node enabled enc key isolate; do
+	if [ -z "$cidr" ] || [ "$cidr" = "-" ]; then
+		cidr=""
+		while [ "$AUTO_C" -le 254 ]; do
+			cand3="$BASE_A.$BASE_B.$AUTO_C"
+			if ! net3_in_use "$cand3"; then
+				gw="$cand3.1"
+				cidr="$cand3.0/24"
+				USED_NETS="$USED_NETS $cand3"
+				AUTO_C=$((AUTO_C + 1))
+				break
+			fi
+			AUTO_C=$((AUTO_C + 1))
+		done
+		[ -n "$cidr" ] || die "自动分配子网失败（/24 地址池已用完）"
+	fi
+
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+		"$sid" "$ssid" "$band" "$gw" "$cidr" "$mode" "$node" \
+		"$enabled" "$enc" "$key" "$isolate" >> "$PLAN"
+done < "$ROWS"
+
+# ---- apply ----------------------------------------------------------------
+backup_configs
+trap on_exit EXIT
+
+EXPECTED_NET=""
+EXPECTED_WIFI=""
+EXPECTED_FWD=""
+EXPECTED_ACL=""
+
+while IFS='	' read -r sid ssid band gw cidr mode node enabled enc key isolate; do
+	log "应用 SSID [$ssid] band=$band subnet=$cidr node=$node mode=$mode enabled=$enabled"
+	apply_row "$sid" "$ssid" "$band" "$gw" "$cidr" "$mode" "$node" "$enabled" "$enc" "$key" "$isolate"
+done < "$PLAN"
+
+cleanup_cfg network interface "$EXPECTED_NET"
+cleanup_cfg dhcp dhcp "$EXPECTED_NET"
+cleanup_cfg firewall zone "$EXPECTED_NET"
+cleanup_cfg firewall forwarding "$EXPECTED_FWD"
+cleanup_cfg wireless wifi-iface "$EXPECTED_WIFI"
+cleanup_cfg passwall2 acl_rule "$EXPECTED_ACL"
+cleanup_cfg passwall2 acl "$EXPECTED_ACL"
+
+if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ] && [ "$SSID_COUNT" -gt 0 ]; then
+	uci -q set "passwall2.@global[0].acl_enable=1"
+fi
+
+for c in network dhcp firewall wireless passwall2; do
+	[ -f "/etc/config/$c" ] && uci -q commit "$c" || true
+done
+
+reload_services
+
+{
+	echo "global_enabled=$GLOBAL_ENABLED"
+	echo "ssids=$SSID_COUNT"
+	echo "bss_2g=$BSS24"
+	echo "bss_5g=$BSS5"
+	while IFS='	' read -r sid ssid band gw cidr mode node enabled enc key isolate; do
+		echo "$(make_net "$sid") $ssid $band $cidr $node mode=$mode enabled=$enabled"
+	done < "$PLAN"
+} > "$STATE/status"
+
+APPLY_OK=1
+log "完成：$SSID_COUNT 个 SSID，2.4G $BSS24 个 BSS，5G $BSS5 个 BSS"

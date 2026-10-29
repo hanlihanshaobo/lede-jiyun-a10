@@ -203,4 +203,56 @@ say "add QModem feed"
 	./scripts/feeds install -a -p qmodem
 )
 
+# ---------------------------------------------------------------------------
+# 8. multi-SSID + PassWall2 app
+#
+# The LuCI app lives in this repository (not in a feed), so copy it into the
+# LEDE tree before make defconfig. PassWall2 itself comes from its upstream
+# feed. Lean's packages feed already has xray-core / sing-box / tcping /
+# geoview / chinadns-ng, so the full passwall-packages feed is NOT installed;
+# only its v2ray-geodata source is pulled in §9 (PassWall2 hard-depends on
+# v2ray-geoip/v2ray-geosite, which Lean does not ship).
+# ---------------------------------------------------------------------------
+say "install luci-app-multiwifi"
+rm -rf "$LEDE/package/luci-app-multiwifi"
+cp -a "$ROOT/package/luci-app-multiwifi" "$LEDE/package/"
+
+say "add PassWall2 feed"
+(
+	cd "$LEDE"
+	[ -f feeds.conf ] || cp feeds.conf.default feeds.conf
+	if ! grep -q '^src-git passwall2 ' feeds.conf; then
+		echo 'src-git passwall2 https://github.com/Openwrt-Passwall/openwrt-passwall2.git;main' >> feeds.conf
+	fi
+	./scripts/feeds update passwall2
+	./scripts/feeds install -a -p passwall2
+)
+
+# ---------------------------------------------------------------------------
+# 9. eMMC health UI + PassWall2 geo data
+#
+# luci-app-emmc-health is vendored from adminchenyu/eMMC-Health v1.1.3 (the
+# only eMMC life/Pre-EOL LuCI UI; upstream depends on luci-js-deps which is
+# not in Lean's luci feed, so the vendored Makefile uses mmc-utils directly).
+#
+# PassWall2 needs v2ray-geoip/v2ray-geosite; Lean's packages feed has the
+# cores but not the geodata. Install only the v2ray-geodata source from the
+# passwall-packages feed so xray-core/sing-box/tcping/geoview/chinadns-ng
+# keep coming from Lean and no duplicate package names are installed.
+# ---------------------------------------------------------------------------
+say "install luci-app-emmc-health"
+rm -rf "$LEDE/package/luci-app-emmc-health"
+cp -a "$ROOT/package/luci-app-emmc-health" "$LEDE/package/"
+
+say "add PassWall2 geo-data feed"
+(
+	cd "$LEDE"
+	[ -f feeds.conf ] || cp feeds.conf.default feeds.conf
+	if ! grep -q '^src-git passwall_packages ' feeds.conf; then
+		echo 'src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main' >> feeds.conf
+	fi
+	./scripts/feeds update passwall_packages
+	./scripts/feeds install -p passwall_packages v2ray-geodata
+)
+
 say "done"

@@ -21,3 +21,31 @@ CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
 # management/UI work here.
 CONFIG_PACKAGE_qmodem_INCLUDE_generic-qmi-wwan=y
 # CONFIG_PACKAGE_qmodem_INCLUDE_vendor-qmi-wwan is not set
+
+# Multi-SSID routing: build both cores so VMess/Trojan/SS and
+# Hysteria2/TUIC nodes from the same subscription all work.
+# OpenClash stays installed but must not run at the same time as PassWall2.
+CONFIG_PACKAGE_luci-app-passwall2=y
+CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy=y
+# PassWall2's nftables backend needs dnsmasq-full (nftset support).
+CONFIG_PACKAGE_dnsmasq-full=y
+# CONFIG_PACKAGE_dnsmasq is not set
+# CONFIG_PACKAGE_luci-app-passwall2_Iptables_Transparent_Proxy is not set
+CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_All=y
+# CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_Xray is not set
+# CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_SingBox is not set
+CONFIG_PACKAGE_luci-app-multiwifi=y
+
+# eMMC health UI (adminchenyu/eMMC-Health v1.1.3) + the extcsd reader it uses.
+# The upstream Makefile depends on luci-js-deps (an iStoreOS-only meta that is
+# not in Lean's luci feed); the vendored Makefile drops it and depends on
+# mmc-utils directly.
+CONFIG_PACKAGE_luci-app-emmc-health=y
+CONFIG_PACKAGE_mmc-utils=y
+
+# PassWall2's Makefile hard-depends on v2ray-geoip/v2ray-geosite. Lean's
+# packages feed has xray/sing-box/tcping/geoview/chinadns-ng but not the
+# v2ray geodata packages; they come from the separate passwall-packages feed
+# (only v2ray-geodata is installed there, to avoid duplicate cores).
+CONFIG_PACKAGE_v2ray-geoip=y
+CONFIG_PACKAGE_v2ray-geosite=y

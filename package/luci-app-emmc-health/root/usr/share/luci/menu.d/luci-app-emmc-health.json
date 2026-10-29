@@ -1,0 +1,13 @@
+{
+	"admin/services/emmc-health": {
+		"title": "eMMC健康检测",
+		"order": 66,
+		"action": {
+			"type": "view",
+			"path": "emmc-health"
+		},
+		"depends": {
+			"acl": [ "luci-app-emmc-health" ]
+		}
+	}
+}

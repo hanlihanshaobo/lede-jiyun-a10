@@ -159,6 +159,14 @@ install -m 0755 "$ROOT/files/99-jiyun-net" "$BASE/etc/uci-defaults/99-jiyun-net"
 # branding defaults: hostname + default LuCI theme (first boot only)
 install -m 0755 "$ROOT/files/99-jiyun-branding" "$BASE/etc/uci-defaults/99-jiyun-branding"
 
+# one-time first-boot rootfs resize to fill the eMMC partition
+install -m 0755 "$ROOT/files/99-jiyun-resize" "$BASE/etc/uci-defaults/99-jiyun-resize"
+
+# LuCI overview: hide the DSA CPU/conduit port (eth0), show lan1-3/wan only
+mkdir -p "$BASE/www/luci-static/resources/view/status/include"
+install -m 0644 "$ROOT/files/www/luci-static/resources/view/status/include/15_ports.js" \
+	"$BASE/www/luci-static/resources/view/status/include/15_ports.js"
+
 # Per-unit WLAN MACs: the first-boot "wifi config" (S18fanctrl) rewrites
 # /etc/config/wireless, so uci-defaults is too early - rc.local runs at the
 # very end of boot and applies them.

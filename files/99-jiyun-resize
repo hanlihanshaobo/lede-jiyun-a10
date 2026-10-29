@@ -1,0 +1,23 @@
+#!/bin/sh
+# One-time first-boot resize: grow the ext4 rootfs to the whole eMMC p1.
+#
+# The CI image contains a 256 MB ext4 inside the 7 GB eMMC partition (the MBR
+# already describes p1 as the full eMMC).  resize2fs can grow the mounted ext4
+# online, so no reboot/parted step is needed.  This script is installed in
+# /etc/uci-defaults, i.e. it runs once; a non-zero exit keeps it for the next
+# boot so a transient failure is retried.
+
+DEV=/dev/mmcblk0p1
+LOG=/tmp/jiyun-resize.log
+
+[ -b "$DEV" ] || exit 0
+
+logger -t jiyun-resize "growing $DEV to the partition size"
+if resize2fs "$DEV" >"$LOG" 2>&1; then
+	logger -t jiyun-resize "$(tail -n 1 "$LOG")"
+	rm -f "$LOG"
+	exit 0
+fi
+
+logger -t jiyun-resize "resize failed: $(tail -n 3 "$LOG" | tr '\n' ' ')"
+exit 1

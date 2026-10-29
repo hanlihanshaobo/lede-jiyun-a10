@@ -190,6 +190,25 @@
 	leds {
 		compatible = "gpio-leds";
 
+		/*
+		 * Stock u-boot turns on a "sysled" at power-on; it drives GPIO
+		 * 20, i.e. gpio0 RK_PC4, and the vendor kernel leaves it on
+		 * (the stock DTB has no node for it).  Keep it solid so the
+		 * power LED behaves like the stock firmware.
+		 */
+		sys {
+			label = "sys";
+			gpios = <&gpio0 RK_PC4 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "default-on";
+			pinctrl-names = "default";
+			pinctrl-0 = <&led_sys_en>;
+		};
+
+		/*
+		 * Stock kernel DTB defines "work" on gpio0 RK_PC0 with the
+		 * heartbeat trigger (the node itself is disabled in the stock
+		 * tree).  Keep the same pin and trigger here.
+		 */
 		work {
 			label = "work";
 			gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
@@ -635,6 +654,10 @@
 	};
 
 	leds {
+		led_sys_en: led_sys_en {
+			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
 		led_work_en: led_work_en {
 			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};

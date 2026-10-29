@@ -10,7 +10,9 @@ define Device/jiyun_a10
 	kmod-usb-net kmod-usb-storage \
 	luci-theme-design luci-theme-argon \
 	luci-app-openclash luci-app-zerotier \
-	luci-app-qmodem-next
+	luci-app-qmodem-next \
+	luci-app-diskman \
+	resize2fs
   #
   # Only one image is produced here: the eMMC flashing package (MBR + root.ext4).
   # The SPI NOR package needs the stock loader/u-boot plus the FIT built from the

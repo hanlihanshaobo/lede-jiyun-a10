@@ -154,7 +154,9 @@ jobs:
             CONFIG_PACKAGE_luci-app-zerotier \
             CONFIG_PACKAGE_zerotier \
             CONFIG_PACKAGE_luci-app-qmodem-next \
-            CONFIG_PACKAGE_qmodem; do
+            CONFIG_PACKAGE_qmodem \
+            CONFIG_PACKAGE_luci-app-diskman \
+            CONFIG_PACKAGE_resize2fs; do
             grep -q "^${sym}=y$" .config \
               || { echo "ERROR: ${sym} not selected - check DEVICE_PACKAGES"; exit 1; }
           done

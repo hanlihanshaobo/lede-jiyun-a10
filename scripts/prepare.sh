@@ -156,6 +156,9 @@ BASE="$LEDE/target/linux/rockchip/base-files"
 mkdir -p "$BASE/etc/uci-defaults"
 install -m 0755 "$ROOT/files/99-jiyun-net" "$BASE/etc/uci-defaults/99-jiyun-net"
 
+# branding defaults: hostname + default LuCI theme (first boot only)
+install -m 0755 "$ROOT/files/99-jiyun-branding" "$BASE/etc/uci-defaults/99-jiyun-branding"
+
 # Per-unit WLAN MACs: the first-boot "wifi config" (S18fanctrl) rewrites
 # /etc/config/wireless, so uci-defaults is too early - rc.local runs at the
 # very end of boot and applies them.
@@ -168,5 +171,25 @@ install -m 0755 "$ROOT/files/etc/rc.local" "$BASE/etc/rc.local"
 mkdir -p "$BASE/lib/firmware/mediatek"
 install -m 0644 "$ROOT/files/mt7916_eeprom.bin" \
 	"$BASE/lib/firmware/mediatek/mt7916_eeprom.bin"
+
+# ---------------------------------------------------------------------------
+# 7. extra feed: QModem (the app users still call "luci-app-modem")
+#
+# FUjr/modem_feeds was renamed to FUjr/QModem; the current LuCI package is
+# luci-app-qmodem-next. Upstream ships the feed commented out in
+# feeds.conf.default, and the CI runs "feeds update -a"/"feeds install -a"
+# before this script, so add + install the feed here. make defconfig runs
+# afterwards and will see the packages.
+# ---------------------------------------------------------------------------
+say "add QModem feed"
+(
+	cd "$LEDE"
+	[ -f feeds.conf ] || cp feeds.conf.default feeds.conf
+	if ! grep -q '^src-git qmodem ' feeds.conf; then
+		echo 'src-git qmodem https://github.com/FUjr/QModem.git;main' >> feeds.conf
+	fi
+	./scripts/feeds update qmodem
+	./scripts/feeds install -a -p qmodem
+)
 
 say "done"

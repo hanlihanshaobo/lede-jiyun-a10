@@ -125,7 +125,8 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
 | Ports | LAN = switch ports 0/1/3, WAN = port 4 (port 2 unpopulated) |
 | WiFi | MediaTek MT7916 x2 (PCIe `01:00.0` = 2.4G, `02:00.0` = 5G) |
 | Debug UART | 1500000 8N1 |
-| Management | 192.168.10.1 / `password`, SSID `LEDE` |
+| Management | 192.168.68.1 / `password`, hostname `Dwrt` |
+| WiFi SSID | `Dwrt-<last 6 hex of the LAN MAC>-2.4G` / `-5G` (default theme `luci-theme-design`) |
 
 ## Gotchas worth remembering
 

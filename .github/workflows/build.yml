@@ -142,7 +142,23 @@ jobs:
             || { echo "ERROR: device jiyun_a10 not selected - did prepare.sh fail to append the recipe?"; exit 1; }
           grep -q '^CONFIG_PACKAGE_kmod-dsa-rtl8365mb=y$' .config \
             || { echo "ERROR: kmod-dsa-rtl8365mb not selected - the image would have no switch driver"; exit 1; }
-          echo "jiyun_a10 + kmod-dsa-rtl8365mb OK"
+
+          # Branding/application packages come from DEVICE_PACKAGES. A typo in
+          # that list is silently dropped by defconfig, so assert every symbol
+          # here: a build without the default theme or OpenClash would still
+          # succeed and only be noticed after flashing.
+          for sym in \
+            CONFIG_PACKAGE_luci-theme-design \
+            CONFIG_PACKAGE_luci-theme-argon \
+            CONFIG_PACKAGE_luci-app-openclash \
+            CONFIG_PACKAGE_luci-app-zerotier \
+            CONFIG_PACKAGE_zerotier \
+            CONFIG_PACKAGE_luci-app-qmodem-next \
+            CONFIG_PACKAGE_qmodem; do
+            grep -q "^${sym}=y$" .config \
+              || { echo "ERROR: ${sym} not selected - check DEVICE_PACKAGES"; exit 1; }
+          done
+          echo "jiyun_a10 + switch + branding packages OK"
 
       # Apply the kernel patch series on its own, before the 40+ minute build.
       # A stale upstream patch used to surface ~30 minutes into "Build", behind

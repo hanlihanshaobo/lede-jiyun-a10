@@ -1,0 +1,26 @@
+#!/bin/sh
+# Jiyun A10 branding defaults (first boot only).
+#
+# These are runtime defaults owned by the upstream tree (config_generate
+# creates /etc/config/system, luci-base ships mediaurlbase=bootstrap), so
+# override them here instead of patching the upstream LEDE tree:
+#   * /etc/init.d/boot runs config_generate first, then /etc/uci-defaults/*,
+#     so system.@system[0] already exists when this script runs.
+#   * luci-theme-design / luci-theme-argon ship their own 30_luci-theme-*
+#     scripts, but running after them keeps "design" the final choice.
+
+HOSTNAME='Dwrt'
+THEME='/luci-static/design'
+
+uci -q set "system.@system[0].hostname=$HOSTNAME"
+uci -q commit system
+
+if [ -f /etc/config/luci ]; then
+	uci -q batch <<EOF
+set luci.themes.Design='$THEME'
+set luci.main.mediaurlbase='$THEME'
+commit luci
+EOF
+fi
+
+exit 0

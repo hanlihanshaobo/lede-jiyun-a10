@@ -14,3 +14,10 @@ CONFIG_TARGET_ROOTFS_EXT4FS=y
 CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
 # module BTF rejected cfg80211/mac80211 signatures on this setup
 # CONFIG_KERNEL_DEBUG_INFO_BTF is not set
+
+# QModem: use the in-tree generic QMI WWAN driver instead of the feed's
+# out-of-tree vendor driver. The vendor driver tracks older kernels and is the
+# main build risk for this board; the generic one is enough for the modem
+# management/UI work here.
+CONFIG_PACKAGE_qmodem_INCLUDE_generic-qmi-wwan=y
+# CONFIG_PACKAGE_qmodem_INCLUDE_vendor-qmi-wwan is not set

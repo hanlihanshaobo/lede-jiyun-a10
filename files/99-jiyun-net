@@ -44,8 +44,8 @@ delete network.dev_lan
 delete network.brlan
 
 set network.lan.device='br-lan'
-# 192.168.1.1 is the LEDE default and clashes with many upstream routers.
-set network.lan.ipaddr='192.168.10.1'
+# Keep the stock WayOS LAN address so existing cabling/bookmarks keep working.
+set network.lan.ipaddr='192.168.68.1'
 set network.lan.netmask='255.255.255.0'
 
 set network.brlan='device'

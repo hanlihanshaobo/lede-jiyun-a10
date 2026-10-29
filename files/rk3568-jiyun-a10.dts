@@ -757,11 +757,34 @@
 &usb_host0_xhci {
 	dr_mode = "host";
 	status = "okay";
+	/*
+	 * The stock DTB carries a long quirk list on both dwc3 nodes; the
+	 * mainline dtsi only has dis_u2_susphy_quirk. Without them the USB3
+	 * root hub's port reset hangs in hub_port_reset (kworker/+usb_hub_wq
+	 * stuck in D state and load average pinned at 1.0 even with nothing
+	 * plugged in). Keep the vendor set.
+	 */
+	snps,dis_enblslpm_quirk;
+	snps,dis-u1-entry-quirk;
+	snps,dis-u2-entry-quirk;
+	snps,dis-u2-freeclk-exists-quirk;
+	snps,dis-del-phy-power-chg-quirk;
+	snps,dis-tx-ipgap-linecheck-quirk;
+	snps,dis_rxdet_inp3_quirk;
+	snps,xhci-trb-ent-quirk;
+	snps,parkmode-disable-ss-quirk;
 };
 
 &usb_host1_xhci {
 	dr_mode = "host";
 	status = "okay";
+	snps,dis_enblslpm_quirk;
+	snps,dis-u2-freeclk-exists-quirk;
+	snps,dis-del-phy-power-chg-quirk;
+	snps,dis-tx-ipgap-linecheck-quirk;
+	snps,dis_rxdet_inp3_quirk;
+	snps,xhci-trb-ent-quirk;
+	snps,parkmode-disable-ss-quirk;
 };
 
 &usb_host0_ehci {

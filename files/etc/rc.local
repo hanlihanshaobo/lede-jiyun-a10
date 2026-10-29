@@ -1,4 +1,12 @@
 #!/bin/sh
+# xHCI/root-hub runtime autosuspend can hang in xhci_bus_suspend on this SoC
+# (kworker/*+pm pinned in D state, load average stuck at 1.0 while the CPU is
+# idle). The dwc3 quirk list in the DTS is the real fix; writing "on" here is
+# a belt-and-braces measure and also unsticks a suspend already in flight.
+for h in /sys/bus/usb/devices/usb*/power/control; do
+	[ -w "$h" ] && echo on > "$h"
+done
+
 # Per-unit WLAN MACs (must run after the first-boot "wifi config").
 sh /etc/jiyun-mac.sh 2>/dev/null
 

@@ -204,19 +204,14 @@ say "add QModem feed"
 )
 
 # ---------------------------------------------------------------------------
-# 8. multi-SSID + PassWall2 app
+# 8. PassWall2 app
 #
-# The LuCI app lives in this repository (not in a feed), so copy it into the
-# LEDE tree before make defconfig. PassWall2 itself comes from its upstream
-# feed. Lean's packages feed already has xray-core / sing-box / tcping /
-# geoview / chinadns-ng, so the full passwall-packages feed is NOT installed;
-# only its v2ray-geodata source is pulled in §9 (PassWall2 hard-depends on
-# v2ray-geoip/v2ray-geosite, which Lean does not ship).
+# PassWall2 itself comes from its upstream feed. Lean's packages feed already
+# has xray-core / sing-box / tcping / geoview / chinadns-ng, so the full
+# passwall-packages feed is NOT installed; only its v2ray-geodata source is
+# pulled in §9 (PassWall2 hard-depends on v2ray-geoip/v2ray-geosite, which
+# Lean does not ship).
 # ---------------------------------------------------------------------------
-say "install luci-app-multiwifi"
-rm -rf "$LEDE/package/luci-app-multiwifi"
-cp -a "$ROOT/package/luci-app-multiwifi" "$LEDE/package/"
-
 say "add PassWall2 feed"
 (
 	cd "$LEDE"

@@ -10,7 +10,7 @@ define Device/jiyun_a10
 	kmod-usb-net kmod-usb-storage \
 	luci-theme-design luci-theme-argon \
 	luci-app-openclash luci-app-zerotier \
-	luci-app-passwall2 luci-app-multiwifi \
+	luci-app-passwall2 \
 	luci-app-emmc-health mmc-utils \
 	luci-app-qmodem-next \
 	luci-app-diskman \

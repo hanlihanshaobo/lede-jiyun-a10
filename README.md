@@ -22,6 +22,7 @@ files/stock_fit_header.bin      stock FIT header template for mkfit.py
 files/stock_loader.bin          stock loader partition (GPT header + idbloader)
 files/stock_uboot.bin           stock u-boot FIT (U-Boot + ATF + OP-TEE + MCU)
 files/mk-emmc-img.py            MBR + root.ext4 -> eMMC flashing image
+package/luci-app-multiwifi/     Multi-SSID + PassWall2 routing app (installed by prepare.sh)
 configs/config.seed             seed .config (target/device, BTF off, MMC)
 tools/mkfit.py                  repack kernel+DTB into the stock (data-position) FIT
 tools/mk-spi-img.py             loader + u-boot + FIT -> SPI NOR flashing image
@@ -120,13 +121,13 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
 | SoC | Rockchip RK3568B2 (4x Cortex-A55) |
 | DRAM | ~2 GB |
 | Boot | SPI NOR W25Q256JW 32 MB — `Kernel` partition holds a FIT (kernel + DTB) |
-| Rootfs | eMMC `mmcblk0p1` (ext4), 256 MB image |
+| Rootfs | eMMC `mmcblk0p1` (ext4), 256 MB image; the first-boot online resize aborts at 377.8 MB on kernel 6.18 (`make_ext4fs` GDT layout) — use the top-level `scripts/expand_emmc_offline.sh` (offline resize + p1 stream) until the image recipe is fixed |
 | Switch | Realtek RTL8367S, MDIO 0x1d, CPU port 7, driven by `kmod-dsa-rtl8365mb` |
 | Ports | LAN = switch ports 0/1/3, WAN = port 4 (port 2 unpopulated) |
 | WiFi | MediaTek MT7916 x2 (PCIe `01:00.0` = 2.4G, `02:00.0` = 5G) |
 | Debug UART | 1500000 8N1 |
 | Management | 192.168.68.1 / `password`, hostname `Dwrt` |
-| WiFi SSID | `Dwrt-<last 6 hex of the LAN MAC>-2.4G` / `-5G` (default theme `luci-theme-design`) |
+| WiFi SSID | `Dwrt-<last 6 hex of each radio BSSID>-2.4G` / `-5G` (default theme `luci-theme-design`) |
 
 ## Gotchas worth remembering
 
@@ -139,6 +140,12 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
   `/etc/uci-defaults`; hostapd needs `wifi down/up` (a SIGHUP won't change BSSID).
 - **FIT format**: the 2017.09 u-boot only understands `data-position`; `mkimage -E`
   emits `data-offset`, hence `tools/mkfit.py` patches the stock header.
+- **eMMC rootfs expansion**: the 256 MB rootfs is created by `make_ext4fs` with only
+  15 reserved GDT blocks, so the kernel 6.18 online resize aborts at 377.8 MB with
+  `reserve_backup_gdb: reserved block 16 not at offset 15`. Use the top-level
+  `scripts/expand_emmc_offline.sh` (offline `resize2fs` + stream to `mmcblk0p1`,
+  MBR untouched); a 7 GB rootfs image or an initramfs offline resize is the
+  long-term fix. `mke2fs` only reserves 4 GB online, so it is not enough for 7 GB.
 - **Kernel config fragments**: `target/linux/generic/config-6.18` disables
   `NET_DSA`/`NET_SWITCHDEV`/RTL8366 symbols, so `scripts/prepare.sh` flips them.
   `NET_DSA`/`NET_SWITCHDEV`/RTL8366 symbols, so the workflow `sed`s them out.

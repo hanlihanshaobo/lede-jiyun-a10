@@ -173,6 +173,7 @@ install -m 0644 "$ROOT/files/www/luci-static/resources/view/status/include/15_po
 # /etc/config/wireless, so uci-defaults is too early - rc.local runs at the
 # very end of boot and applies them.
 install -m 0755 "$ROOT/files/etc/jiyun-mac.sh" "$BASE/etc/jiyun-mac.sh"
+install -m 0644 "$ROOT/files/etc/jiyun-factory-mac.sh" "$BASE/etc/jiyun-factory-mac.sh"
 install -m 0755 "$ROOT/files/etc/rc.local" "$BASE/etc/rc.local"
 
 # MT7916 needs an EEPROM blob; without it mt7915 probe fails and no wlan phy

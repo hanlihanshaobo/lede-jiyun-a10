@@ -14,16 +14,23 @@
 #   LAN  = base,  WAN = base+8,  2.4G = base-5,  5G = base+3
 
 . /lib/functions/system.sh
+. /etc/jiyun-factory-mac.sh
 
-BASE="$(macaddr_generate_from_mmc_cid mmcblk0 2>/dev/null)"
-[ -n "$BASE" ] || BASE="02:00:00:00:00:01"
-WAN_MAC="$(macaddr_add "$BASE" 8)"
+# Per-unit factory MACs from the stock Config_new partition (mtd5); fall back
+# to the eMMC CID when that partition is missing or erased.
+BASE="$(jiyun_wayos_get mac_deflan)"
+if [ -n "$BASE" ]; then
+	logger -t jiyun-net "MAC base from stock Config_new: $BASE"
+else
+	BASE="$(macaddr_generate_from_mmc_cid mmcblk0 2>/dev/null)"
+	[ -n "$BASE" ] || BASE="02:00:00:00:00:01"
+	logger -t jiyun-net "MAC base from eMMC CID: $BASE (Config_new unavailable)"
+fi
+WAN_MAC="$(jiyun_wayos_get mac_defwan)"
+[ -n "$WAN_MAC" ] || WAN_MAC="$(macaddr_add "$BASE" 8)"
 LAN1_MAC="$(macaddr_add "$BASE" 9)"
 LAN2_MAC="$(macaddr_add "$BASE" 10)"
 LAN3_MAC="$(macaddr_add "$BASE" 11)"
-WL24_MAC="$(macaddr_add "$BASE" -5)"
-WL5_MAC="$(macaddr_add "$BASE" 3)"
-logger -t jiyun-net "MAC base from eMMC CID: $BASE"
 
 # LEDE's default network config ships an *anonymous* `config device` named
 # br-lan (bridging eth0).  The batch below adds `network.brlan` with the same

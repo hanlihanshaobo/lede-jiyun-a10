@@ -4,12 +4,18 @@
 # be overwritten.  Idempotent: only reloads the radios when a value changes.
 
 . /lib/functions/system.sh
+. /etc/jiyun-factory-mac.sh
 
 base="$(uci -q get network.dev_eth0.macaddr)"
 [ -n "$base" ] || exit 0
 
-w24="$(macaddr_add "$base" -5)"
-w5="$(macaddr_add "$base" 3)"
+# Prefer the factory WLAN MACs from Config_new (mac_defwl / mac_defwl_5g);
+# derive from the base when the partition is gone (LAN-5 / LAN+3 on the two
+# units we checked).
+w24="$(jiyun_wayos_get mac_defwl)"
+[ -n "$w24" ] || w24="$(macaddr_add "$base" -5)"
+w5="$(jiyun_wayos_get mac_defwl_5g)"
+[ -n "$w5" ] || w5="$(macaddr_add "$base" 3)"
 [ -n "$w24" ] && [ -n "$w5" ] || exit 0
 
 # SSID: Dwrt-<last 6 hex digits of the LAN/base MAC>-2.4G / -5G.

@@ -18,14 +18,15 @@ w5="$(jiyun_wayos_get mac_defwl_5g)"
 [ -n "$w5" ] || w5="$(macaddr_add "$base" 3)"
 [ -n "$w24" ] && [ -n "$w5" ] || exit 0
 
-# SSID: Dwrt-<last 6 hex digits of the LAN/base MAC>-2.4G / -5G.
-# The base MAC is the stock per-unit LAN MAC (or the eMMC CID fallback), so the
-# suffix is unique per unit and stable across reboots and reflashes; both bands
-# share it, only the band suffix differs.
-suffix="$(printf '%s' "$base" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 6)"
-[ -n "$suffix" ] || exit 0
-ssid24="Dwrt-${suffix}-2.4G"
-ssid5="Dwrt-${suffix}-5G"
+# SSID: Dwrt-<last 6 hex digits of each radio's BSSID>-2.4G / -5G.
+# The two radios have different MACs (factory mac_defwl/mac_defwl_5g, or the
+# CID-derived fallbacks), so each SSID gets its own suffix matching the BSSID
+# that hostapd actually advertises.
+suffix24="$(printf '%s' "$w24" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 6)"
+suffix5="$(printf '%s' "$w5" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 6)"
+[ -n "$suffix24" ] && [ -n "$suffix5" ] || exit 0
+ssid24="Dwrt-${suffix24}-2.4G"
+ssid5="Dwrt-${suffix5}-5G"
 
 changed=0
 [ "$(uci -q get wireless.default_radio0.macaddr)" = "$w24" ] || {

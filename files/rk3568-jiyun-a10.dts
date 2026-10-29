@@ -784,3 +784,72 @@
 	phy-supply = <&vcc5v0_host>;
 	status = "okay";
 };
+
+/*
+ * SPI NOR (W25Q256JW, 32 MiB) on the Rockchip SFC controller.
+ *
+ * The LEDE dtsi ships this node disabled and without a flash child, which is
+ * why the running system has no /dev/mtd* at all - updating the boot chain
+ * always needed maskrom/loader and a USB cable. Enabling it gives the kernel
+ * a normal MTD device, so the FIT in the "Kernel" partition can be read,
+ * backed up and updated from userspace (mtd write / flashcp).
+ *
+ * Partition layout must match the stock mtdparts on the kernel command line:
+ *   0x000000 loader(1M) | 0x100000 uboot(2M) | 0x300000 Kernel(0x1ba0000)
+ *   0x1ea0000 modules | 0x1f20000 ParamBackup | 0x1f80000 Config_new
+ *   0x1fe0000 Factory | 0x1ff0000 buginfo
+ */
+&{/spi@fe300000} {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <100000000>;
+		spi-4byte-addressing;
+		broken-flash-reset;
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <1>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "loader";
+				reg = <0x000000 0x100000>;
+			};
+			partition@100000 {
+				label = "uboot";
+				reg = <0x100000 0x200000>;
+			};
+			partition@300000 {
+				label = "Kernel";
+				reg = <0x300000 0x1ba0000>;
+			};
+			partition@1ea0000 {
+				label = "modules";
+				reg = <0x1ea0000 0x80000>;
+			};
+			partition@1f20000 {
+				label = "ParamBackup";
+				reg = <0x1f20000 0x60000>;
+			};
+			partition@1f80000 {
+				label = "Config_new";
+				reg = <0x1f80000 0x60000>;
+			};
+			partition@1fe0000 {
+				label = "Factory";
+				reg = <0x1fe0000 0x10000>;
+			};
+			partition@1ff0000 {
+				label = "buginfo";
+				reg = <0x1ff0000 0x10000>;
+			};
+		};
+	};
+};

@@ -19,9 +19,9 @@ w5="$(jiyun_wayos_get mac_defwl_5g)"
 [ -n "$w24" ] && [ -n "$w5" ] || exit 0
 
 # SSID: Dwrt-<last 6 hex digits of the LAN/base MAC>-2.4G / -5G.
-# The base MAC is derived from the eMMC CID, so the suffix is unique per unit
-# and stable across reboots and reflashes; both bands share it, only the band
-# suffix differs.
+# The base MAC is the stock per-unit LAN MAC (or the eMMC CID fallback), so the
+# suffix is unique per unit and stable across reboots and reflashes; both bands
+# share it, only the band suffix differs.
 suffix="$(printf '%s' "$base" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 6)"
 [ -n "$suffix" ] || exit 0
 ssid24="Dwrt-${suffix}-2.4G"

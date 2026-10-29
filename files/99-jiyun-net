@@ -8,10 +8,11 @@
 #   wan               - the WAN jack        (switch port 4)
 #   (port 2 is not populated on this board)
 #
-# MACs: the factory ones live in the WayOS config partition of the SPI NOR,
-# which mainline cannot read, so derive a locally administered MAC from the
-# eMMC CID - unique per board, stable across reboots and rootfs re-flashes.
-#   LAN  = base,  WAN = base+8,  2.4G = base-5,  5G = base+3
+# MACs: the per-unit values come from the stock WayOS Config_new partition in
+# the SPI NOR (mtd5); if it is missing/erased, derive a locally administered
+# MAC from the eMMC CID instead.  Layout:
+#   LAN  = mac_deflan,  WAN = mac_defwan (base+8)
+#   2.4G = mac_defwl (base-5),  5G = mac_defwl_5g (base+3)
 
 . /lib/functions/system.sh
 . /etc/jiyun-factory-mac.sh

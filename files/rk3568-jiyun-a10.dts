@@ -822,7 +822,13 @@
 };
 
 &usb2phy0_otg {
-	phy-supply = <&vcc5v0_otg>;
+	/*
+	 * Stock DTB: vbus-supply, not phy-supply.  This is the single USB port
+	 * (OTG/flashing); the dwc3 host side uses it to enable and validate
+	 * VBUS.  With phy-supply the 5V rail is on but the host port never
+	 * sees a device.
+	 */
+	vbus-supply = <&vcc5v0_otg>;
 	status = "okay";
 };
 

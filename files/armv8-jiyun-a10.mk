@@ -6,7 +6,7 @@ define Device/jiyun_a10
   DEVICE_DTS := rk3568-jiyun-a10
   SUPPORTED_DEVICES += jiyun,a10
   UBOOT_DEVICE_NAME := generic-rk3568
-  DEVICE_PACKAGES := kmod-dsa-rtl8365mb wpad-mbedtls kmod-mt_wifi wifi-profile \
+  DEVICE_PACKAGES := kmod-dsa-rtl8365mb kmod-mt_wifi wifi-profile luci-app-mtk datconf \
 	kmod-usb-net kmod-usb-storage \
 	luci-theme-design luci-theme-argon \
 	luci-app-openclash luci-app-zerotier \

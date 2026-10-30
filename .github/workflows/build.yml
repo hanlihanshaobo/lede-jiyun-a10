@@ -154,7 +154,8 @@ jobs:
           # the build then failed only after the 30-minute kernel compile with
           # "No rule to make target package/mtk/drivers/mt_wifi/compile".
           for sym in CONFIG_PACKAGE_kmod-mt_wifi CONFIG_PACKAGE_wifi-profile \
-                     CONFIG_PACKAGE_wifi-dats CONFIG_PACKAGE_kmod-cfg80211; do
+                     CONFIG_PACKAGE_wifi-dats CONFIG_PACKAGE_luci-app-mtk \
+                     CONFIG_PACKAGE_datconf; do
             grep -q "^${sym}=y$" .config || {
               echo "ERROR: ${sym} not selected"
               grep -E 'CONFIG_(PACKAGE_(kmod-mt_wifi|wifi-profile|wifi-dats|kmod-cfg80211)|MTK_(MT_WIFI|MT_AP_SUPPORT|CFG80211_SUPPORT))' .config || true

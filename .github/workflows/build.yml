@@ -195,10 +195,17 @@ jobs:
           done < /tmp/ctx
           exit 1
 
+      - name: Download packages
+        timeout-minutes: 60
+        run: |
+          cd lede
+          make download -j"$(nproc)" || make download -j1 V=s
+
       # Build the vendor wifi module before the rootfs so a compile error
       # fails in ~40 minutes instead of after the full image build.  Only
       # present on the vendor-wifi branch; on main the package directory is
-      # absent and the step is skipped.
+      # absent and the step is skipped.  This must run *after* "Download
+      # packages": target/linux/compile needs the kernel tarball in dl/.
       - name: Compile vendor wifi driver (fail fast)
         if: ${{ hashFiles('lede/package/mtk/drivers/mt_wifi/Makefile') != '' }}
         run: |
@@ -211,8 +218,11 @@ jobs:
 
           LOG=/tmp/vendor-wifi.log
           [ -s "$LOG" ] || LOG=/tmp/kernel-build.log
-          CTX=$(grep -B15 -A6 -m1 -E 'error:|fatal error:|Error [0-9]+' "$LOG" || true)
-          [ -n "$CTX" ] || CTX=$(tail -40 "$LOG")
+          # Prefer the first real compiler diagnostic over the trailing
+          # "make: *** [...] Error 1" stack.
+          CTX=$(grep -B18 -A8 -m1 -E 'error: |fatal error: ' "$LOG" || true)
+          [ -n "$CTX" ] || CTX=$(grep -B15 -A6 -m1 -E 'Error [0-9]+' "$LOG" || true)
+          [ -n "$CTX" ] || CTX=$(tail -60 "$LOG")
           {
             echo '### vendor wifi driver failed'
             echo '```'
@@ -222,13 +232,21 @@ jobs:
           printf '%s\n' "$CTX" | while IFS= read -r line; do
             [ -n "$line" ] && echo "::error::${line:0:900}"
           done
+          # Keep the logs inside the workspace so upload-artifact can read them.
+          cp /tmp/kernel-build.log kernel-build.log 2>/dev/null || true
+          cp /tmp/vendor-wifi.log vendor-wifi.log 2>/dev/null || true
           exit 1
 
-      - name: Download packages
-        timeout-minutes: 60
-        run: |
-          cd lede
-          make download -j"$(nproc)" || make download -j1 V=s
+      - name: Upload vendor wifi build log
+        if: failure() && hashFiles('lede/package/mtk/drivers/mt_wifi/Makefile') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-wifi-build-log
+          path: |
+            lede/kernel-build.log
+            lede/vendor-wifi.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Build
         run: |

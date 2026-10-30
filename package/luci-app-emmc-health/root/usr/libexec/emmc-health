@@ -9,10 +9,14 @@ json_escape() {
 	# control characters are illegal inside JSON strings, so normalize them
 	# before escaping quotes, backslashes and newlines.
 	tr '\000-\011\013\014\016-\037' ' ' |
+	# Join all lines first: with the old order (quote escaping before N)
+	# only the first line was escaped, so a quote in a later mmc-utils line
+	# (e.g. "eMMC Firmware Version: '[SX7 \"") produced invalid JSON.
 	sed \
+		-e ':a;N;$!ba;s/\r//g' \
 		-e 's/\\/\\\\/g' \
 		-e 's/"/\\"/g' \
-		-e ':a;N;$!ba;s/\r//g;s/\n/\\n/g'
+		-e 's/\n/\\n/g'
 }
 
 json_string() {

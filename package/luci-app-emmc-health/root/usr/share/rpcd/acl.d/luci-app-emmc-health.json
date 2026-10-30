@@ -4,6 +4,9 @@
 		"read": {
 			"file": {
 				"/usr/libexec/emmc-health": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "exec" ]
 			}
 		}
 	}

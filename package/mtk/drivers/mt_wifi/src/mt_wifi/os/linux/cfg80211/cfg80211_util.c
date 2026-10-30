@@ -193,13 +193,13 @@ static struct ieee80211_sband_iftype_data iwl_he_capa = {
 				IEEE80211_HE_MAC_CAP2_ACK_EN,
 			.mac_cap_info[3] =
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0))
-					IEEE80211_HE_MAC_CAP3_MAX_AMPDU_LEN_EXP_VHT_2,
+					IEEE80211_HE_MAC_CAP3_MAX_AMPDU_LEN_EXP_EXT_2,
 #else
 
 				IEEE80211_HE_MAC_CAP3_GRP_ADDR_MULTI_STA_BA_DL_MU |
 				IEEE80211_HE_MAC_CAP3_MAX_A_AMPDU_LEN_EXP_VHT_2,
 #endif
-			.mac_cap_info[4] = IEEE80211_HE_MAC_CAP4_AMDSU_IN_AMPDU,
+			.mac_cap_info[4] = IEEE80211_HE_MAC_CAP4_AMSDU_IN_AMPDU,
 			.phy_cap_info[0] =
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0))
 				IEEE80211_HE_PHY_CAP0_DUAL_BAND |
@@ -234,7 +234,7 @@ static struct ieee80211_sband_iftype_data iwl_he_capa = {
 			.phy_cap_info[6] =
 				IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT,
 			.phy_cap_info[7] =
-				IEEE80211_HE_PHY_CAP7_POWER_BOOST_FACTOR_AR |
+				IEEE80211_HE_PHY_CAP7_POWER_BOOST_FACTOR_SUPP |
 				IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI |
 				IEEE80211_HE_PHY_CAP7_MAX_NC_7,
 			.phy_cap_info[8] =
@@ -1234,7 +1234,14 @@ BOOLEAN CFG80211OS_RxMgmt(IN PNET_DEV pNetDev, IN INT32 freq, IN PUCHAR frame, I
 		return FALSE;
 	}
 
-#if (KERNEL_VERSION(3, 6, 0) <= LINUX_VERSION_CODE)
+#if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
+	return cfg80211_rx_mgmt(pNetDev->ieee80211_ptr,
+							freq,
+							0,       /* CFG_TODO return 0 in dbm */
+							frame,
+							len,
+							0);      /* nl80211_rxmgmt_flags */
+#elif (KERNEL_VERSION(3, 6, 0) <= LINUX_VERSION_CODE)
 	return cfg80211_rx_mgmt(pNetDev->ieee80211_ptr,
 							freq,
 							0,       /* CFG_TODO return 0 in dbm */
@@ -1337,7 +1344,20 @@ VOID CFG80211OS_Roamed(
 	IN UCHAR *pReqIe, IN UINT32 ReqIeLen,
 	IN UCHAR *pRspIe, IN UINT32 RspIeLen)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	/* 6.1 moved bssid/channel into the MLO links[] array.  Non-MLO
+	 * callers are expected to fill links[0]; cfg80211 dereferences
+	 * links[0].bss for the roamed address, so this path is only safe
+	 * once a BSS lookup is added.  (AP mode does not roam.)
+	 */
+	struct cfg80211_roam_info roam_info = {
+		.links[0].bssid = pBSSID,
+		.req_ie = pReqIe,
+		.req_ie_len = ReqIeLen,
+		.resp_ie = pRspIe,
+		.resp_ie_len = RspIeLen,
+	};
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 	struct cfg80211_roam_info roam_info = {
 		.channel = NULL,
 		.bssid = pBSSID,

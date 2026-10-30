@@ -3572,7 +3572,11 @@ BOOLEAN CFG80211_checkScanResInKernelCache(
 
 	bss = cfg80211_get_bss(pWiphy, NULL, pBSSID,
 						   pSsid, ssidLen,
+#if (KERNEL_VERSION(4, 1, 0) <= LINUX_VERSION_CODE)
+						   IEEE80211_BSS_TYPE_ESS, IEEE80211_PRIVACY_ANY);
+#else
 						   WLAN_CAPABILITY_ESS, WLAN_CAPABILITY_ESS);
+#endif
 
 	if (bss) {
 		CFG80211OS_PutBss(pWiphy, bss);
@@ -3666,6 +3670,9 @@ BOOLEAN CFG80211_checkScanTable(
 		NdisCopyMemory(ie + 2 + pApCliEntry->MlmeAux.SsidLen, pBssEntry->pVarIeFromProbRsp,
 					   pBssEntry->VarIeFromProbeRspLen);
 		bss = cfg80211_inform_bss(pWiphy, chan,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
+								  CFG80211_BSS_FTYPE_BEACON,
+#endif
 								  pApCliEntry->MlmeAux.Bssid, timestamp, WLAN_CAPABILITY_ESS, pApCliEntry->MlmeAux.BeaconPeriod,
 								  ie, ieLen,
 #ifdef CFG80211_SCAN_SIGNAL_AVG

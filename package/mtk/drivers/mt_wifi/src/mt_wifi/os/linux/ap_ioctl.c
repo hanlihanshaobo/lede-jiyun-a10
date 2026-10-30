@@ -332,11 +332,19 @@ INT ap_iw_handler(struct net_device *dev, struct iw_request_info *info,
 	struct iwreq *wreq = CONTAINER_OF(wrqu, struct iwreq, u);
 	const struct iw_ioctl_description *	standard_descr;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+	/* ndo_do_ioctl was removed in 5.15; call the driver handler directly.
+	 * All per-interface hooks (rt28xx_ioctl and the cfg80211 virtual-IF
+	 * wrappers) end up in rt28xx_ioctl anyway.
+	 */
+	ret = rt28xx_ioctl(dev, (struct ifreq *)wreq, info->cmd);
+#else
 	if (dev->netdev_ops->ndo_do_ioctl) {
 		ret = dev->netdev_ops->ndo_do_ioctl(dev, (struct ifreq *)wreq, info->cmd);
 	} else {
 		return -EOPNOTSUPP;
 	}
+#endif
 
 	if (ret != NDIS_STATUS_SUCCESS || !IW_IS_GET(info->cmd) || NULL == extra)
 		return ret;

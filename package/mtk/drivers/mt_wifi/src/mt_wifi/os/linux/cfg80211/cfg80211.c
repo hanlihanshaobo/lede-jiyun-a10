@@ -1592,6 +1592,9 @@ static int CFG80211_OpsWiphyParamsSet(
 static int CFG80211_OpsKeyAdd(
 	IN struct wiphy						*pWiphy,
 	IN struct net_device				*pNdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	IN int								link_id,
+#endif
 	IN UINT8							KeyIdx,
 	IN bool								Pairwise,
 	IN const UINT8 * pMacAddr,
@@ -1767,6 +1770,9 @@ static int CFG80211_OpsKeyAdd(
 static int CFG80211_OpsKeyGet(
 	IN struct wiphy						*pWiphy,
 	IN struct net_device				*pNdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	IN int								link_id,
+#endif
 	IN UINT8							KeyIdx,
 	IN bool								Pairwise,
 	IN const UINT8						*pMacAddr,
@@ -1813,6 +1819,9 @@ static int CFG80211_OpsKeyGet(
 static int CFG80211_OpsKeyDel(
 	IN struct wiphy						*pWiphy,
 	IN struct net_device				*pNdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	IN int								link_id,
+#endif
 	IN UINT8							KeyIdx,
 	IN bool								Pairwise,
 	IN const UINT8						*pMacAddr)
@@ -1885,6 +1894,9 @@ static int CFG80211_OpsKeyDel(
 static int CFG80211_OpsKeyDefaultSet(
 	IN struct wiphy						*pWiphy,
 	IN struct net_device				*pNdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	IN int								link_id,
+#endif
 	IN UINT8							KeyIdx,
 	IN bool								Unicast,
 	IN bool								Multicast)
@@ -1934,6 +1946,9 @@ static int CFG80211_OpsKeyDefaultSet(
 static int CFG80211_OpsMgmtKeyDefaultSet(
 	IN struct wiphy						*pWiphy,
 	IN struct net_device				*pNdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	IN int								link_id,
+#endif
 	IN UINT8							KeyIdx)
 
 {
@@ -2377,6 +2392,7 @@ static int CFG80211_OpsRemainOnChannel(
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 static void CFG80211_OpsMgmtFrameRegister(
 	struct wiphy *pWiphy,
 #if (KERNEL_VERSION(3, 6, 0) <= LINUX_VERSION_CODE)
@@ -2404,6 +2420,37 @@ static void CFG80211_OpsMgmtFrameRegister(
 	else
 		CFG80211DBG(DBG_LVL_ERROR, ("Unkown frame_type = %x, req = %d\n", frame_type, reg));
 }
+#endif /* LINUX_VERSION_CODE < 5.10 */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
+/*
+ * cfg80211 5.10 replaced the per-frame-type mgmt_frame_register() op with
+ * update_mgmt_frame_registrations().  The driver only needs to know whether
+ * probe requests and action frames are wanted on this interface, so map the
+ * registration bitmaps back to the two RTMP_DRIVER_80211_* calls.
+ */
+static void CFG80211_OpsUpdateMgmtFrameRegs(
+	struct wiphy *pWiphy,
+	struct wireless_dev *wdev,
+	struct mgmt_frame_regs *upd)
+{
+	VOID *pAd;
+	struct net_device *dev = wdev->netdev;
+	u32 stypes;
+
+	MAC80211_PAD_GET_NO_RV(pAd, pWiphy);
+	if (dev == NULL)
+		RTMP_DRIVER_NET_DEV_GET(pAd, &dev);
+	if (dev == NULL)
+		return;
+
+	stypes = upd->global_stypes | upd->interface_stypes;
+	RTMP_DRIVER_80211_MGMT_FRAME_REG(pAd, dev,
+		!!(stypes & BIT(IEEE80211_STYPE_PROBE_REQ >> 4)));
+	RTMP_DRIVER_80211_ACTION_FRAME_REG(pAd, dev,
+		!!(stypes & BIT(IEEE80211_STYPE_ACTION >> 4)));
+}
+#endif
 
 /* Supplicant_NEW_TDLS */
 #ifdef CFG_TDLS_SUPPORT
@@ -3218,6 +3265,9 @@ static int CFG80211_OpsSetQosMap(
 #ifdef ANTENNA_CONTROL_SUPPORT
 static int CFG80211_OpsSetAntenna(
 	struct wiphy *wiphy,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0))
+	int radio_idx,
+#endif
 	u32 tx_ant,
 	u32 rx_ant)
 {
@@ -3259,6 +3309,9 @@ static int CFG80211_OpsSetAntenna(
 
 static int CFG80211_OpsGetAntenna(
 	struct wiphy *wiphy,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0))
+	int radio_idx,
+#endif
 	u32 *tx_ant,
 	u32 *rx_ant)
 {
@@ -3826,7 +3879,10 @@ struct cfg80211_ops CFG80211_Ops = {
 	.set_cqm_rssi_config		= NULL,
 #endif /* LINUX_VERSION_CODE */
 
-#if (KERNEL_VERSION(2, 6, 37) <= LINUX_VERSION_CODE)
+#if (KERNEL_VERSION(5, 10, 0) <= LINUX_VERSION_CODE)
+	/* notify driver that management frame registration changed */
+	.update_mgmt_frame_registrations = CFG80211_OpsUpdateMgmtFrameRegs,
+#elif (KERNEL_VERSION(2, 6, 37) <= LINUX_VERSION_CODE)
 	/* notify driver that a management frame type was registered */
 	.mgmt_frame_register		= CFG80211_OpsMgmtFrameRegister,
 #endif /* LINUX_VERSION_CODE : 2.6.37 */

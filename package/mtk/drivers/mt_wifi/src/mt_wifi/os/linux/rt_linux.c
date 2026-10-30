@@ -1974,7 +1974,9 @@ int RtmpOSNetDevAttach(
 		pNetDevOps->ndo_stop = pDevOpHook->stop;
 		pNetDevOps->ndo_start_xmit =
 			(HARD_START_XMIT_FUNC) (pDevOpHook->xmit);
+#if (KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE)
 		pNetDevOps->ndo_do_ioctl = pDevOpHook->ioctl;
+#endif
 #else
 		pNetDev->open = pDevOpHook->open;
 		pNetDev->stop = pDevOpHook->stop;

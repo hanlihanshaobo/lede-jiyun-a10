@@ -125,6 +125,21 @@ jobs:
       - name: Inject Jiyun A10 device support
         run: ./scripts/prepare.sh lede
 
+      # Kernel/toolchain cache for the vendor-wifi bring-up loop.  The key
+      # deliberately ignores package/mtk (driver source) so driver-only fixes
+      # reuse the ~40 minute kernel build; it includes the kernel config,
+      # prepare.sh and the WEXT/DTS inputs.  The driver build dir lives outside
+      # linux-rockchip_armv8 and is still rebuilt every run.
+      - name: Cache toolchain and kernel build
+        uses: actions/cache@v4
+        with:
+          path: |
+            lede/staging_dir
+            lede/build_dir/target-*/linux-rockchip_armv8
+          key: lede-kernel-${{ env.LEDE_REF }}-${{ hashFiles('configs/config.seed', 'scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
+          restore-keys: |
+            lede-kernel-${{ env.LEDE_REF }}-
+
       - name: Configure
         run: |
           set -eux

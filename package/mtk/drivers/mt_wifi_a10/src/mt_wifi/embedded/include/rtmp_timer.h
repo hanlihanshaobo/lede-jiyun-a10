@@ -117,7 +117,7 @@ void RtmpTimerQInit(struct _RTMP_ADAPTER *pAd);
 #define BUILD_TIMER_FUNCTION(_func)										\
 	void rtmp_timer_##_func(struct timer_list *_timer)										\
 	{																			\
-		PRALINK_TIMER_STRUCT	_pTimer = from_timer(_pTimer,_timer,_timer);				\
+		PRALINK_TIMER_STRUCT	_pTimer = container_of(_timer, RALINK_TIMER_STRUCT, TimerObj);				\
 		RTMP_TIMER_TASK_ENTRY	*_pQNode;										\
 		RTMP_ADAPTER			*_pAd;											\
 		\
@@ -154,7 +154,7 @@ void RtmpTimerQInit(struct _RTMP_ADAPTER *pAd);
 #define BUILD_TIMER_FUNCTION(_func)										\
 void rtmp_timer_##_func(struct timer_list *_timer)										\
 {																			\
-	PRALINK_TIMER_STRUCT	pTimer = from_timer(pTimer,_timer,TimerObj);				\
+	PRALINK_TIMER_STRUCT	pTimer = container_of(_timer, RALINK_TIMER_STRUCT, TimerObj);				\
 																			\
 	_func(NULL, (PVOID) pTimer->cookie, NULL, pTimer); 							\
 	if (pTimer->Repeat)														\

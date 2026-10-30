@@ -105,12 +105,14 @@ ssid_sections() {
 
 # Keep the generated bridge name below IFNAMSIZ (15 chars):
 #   mws_ + 6 hex = 10, br-mws_xxxxxx = 13
+# The key is "SSID|band"; it is stable even when CBI creates anonymous UCI
+# sections (uci show calls them @ssid[n], LuCI internally calls them cfgXXXX).
 make_net() {
-	local sid="$1" h
+	local key="$1" h
 	if command -v md5sum >/dev/null 2>&1; then
-		h=$(printf '%s' "$sid" | md5sum | cut -c1-6)
+		h=$(printf '%s' "$key" | md5sum | cut -c1-6)
 	else
-		h=$(printf '%s' "$sid" | cksum | cut -d' ' -f1)
+		h=$(printf '%s' "$key" | cksum | cut -d' ' -f1)
 		h=$(printf '%06x' "$h" 2>/dev/null || echo "$h")
 	fi
 	echo "${PREFIX}${h}"
@@ -269,7 +271,7 @@ apply_row() {
 	[ "$key" = "-" ] && key=""
 	[ "$node" = "-" ] && node=""
 
-	net=$(make_net "$sid")
+	net=$(make_net "$ssid|$band")
 	if [ "$GLOBAL_ENABLED" = "1" ] && [ "$enabled" = "1" ]; then
 		wifi_enabled=1
 	else
@@ -455,12 +457,6 @@ GENERATED_NETS=""
 
 # ---- pass 1: validate and collect -----------------------------------------
 for sid in $(ssid_sections); do
-	net=$(make_net "$sid")
-	case " $GENERATED_NETS " in
-		*" $net "*) die "生成的接口名冲突: $net" ;;
-	esac
-	GENERATED_NETS="$GENERATED_NETS $net"
-
 	ssid=$(uci_get "$CONFIG.$sid.ssid")
 	band=$(uci_get "$CONFIG.$sid.band")
 	enc=$(uci_get "$CONFIG.$sid.encryption")
@@ -489,6 +485,13 @@ for sid in $(ssid_sections); do
 		2g|5g|both) ;;
 		*) die "$sid 的频段无效: $band" ;;
 	esac
+
+	net=$(make_net "$ssid|$band")
+	case " $GENERATED_NETS " in
+		*" $net "*) die "生成的接口名冲突: $net" ;;
+	esac
+	GENERATED_NETS="$GENERATED_NETS $net"
+
 	case "$enc" in
 		psk2|sae-mixed|none) ;;
 		*) die "$sid 的加密方式无效: $enc" ;;
@@ -672,7 +675,7 @@ reload_services
 	echo "bss_2g=$BSS24"
 	echo "bss_5g=$BSS5"
 	while IFS='	' read -r sid ssid band gw cidr mode node enabled enc key isolate; do
-		echo "$(make_net "$sid") $ssid $band $cidr $node mode=$mode enabled=$enabled"
+		echo "$(make_net "$ssid|$band") $ssid $band $cidr $node mode=$mode enabled=$enabled"
 	done < "$PLAN"
 } > "$STATE/status"
 

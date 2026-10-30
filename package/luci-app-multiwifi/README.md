@@ -5,6 +5,8 @@
 - 每个逻辑 SSID 一个独立 bridge + `/24` 子网 + DHCP + firewall zone
 - 每个 SSID 绑定一条 PassWall2 访问控制（ACL）规则
 - 2.4G / 5G 可以分别配置任意数量的 SSID
+- 全局“WiFi 数量”+“添加 N 个 SSID”可批量建行，频段/线路再逐行设置
+- 页面使用 LuCI 主题 CSS 变量，兼容 design / argon 的明暗主题
 - “双频”一行表示同一个 SSID 同时开 2.4G/5G，共用一个子网和线路
 - 保留原有 `default_radio0/1`（`jiyun-mac.sh` 管理的默认 SSID）不动
 
@@ -14,7 +16,7 @@ LuCI：**网络 → 多 SSID 分流**
 
 ## 生成规则
 
-以 UCI section `cfgxxxxxx` 为例，脚本生成：
+`<6位md5>` 是 `SSID|频段` 的 md5 前 6 位（不是 UCI section 名，兼容 LuCI 匿名 section）。脚本生成：
 
 | 配置 | 名称 |
 |---|---|

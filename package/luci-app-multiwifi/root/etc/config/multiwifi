@@ -1,3 +1,4 @@
 config global 'global'
 	option enabled '1'
 	option subnet_base '192.168.80.0/24'
+	option ssid_count '3'

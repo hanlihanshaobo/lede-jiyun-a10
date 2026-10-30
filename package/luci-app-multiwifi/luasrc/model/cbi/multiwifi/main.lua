@@ -13,9 +13,15 @@ sys.call("mkdir -p /tmp/multiwifi && cp -f /etc/config/multiwifi /tmp/multiwifi/
 local m, s, o
 
 -- Must stay in sync with make_net() in /usr/libexec/multiwifi-apply.
+-- The key is "SSID|band", not the UCI section name: CBI-created sections are
+-- anonymous internally (cfgXXXX) but `uci show` calls them @ssid[n], so the
+-- two sides cannot agree on the section name. SSID+band is stable and unique
+-- (duplicate SSIDs are rejected by the apply script).
 -- mws_ + 6 hex keeps br-mws_xxxxxx below the 15-char interface limit.
 local function net_for(section)
-	local q = util.shellquote(tostring(section or ""))
+	local ssid = uci:get("multiwifi", section, "ssid") or ""
+	local band = uci:get("multiwifi", section, "band") or "2g"
+	local q = util.shellquote(tostring(ssid) .. "|" .. tostring(band))
 	local h = sys.exec("printf '%s' " .. q .. " | md5sum | cut -c1-6")
 	h = tostring(h or ""):gsub("%s+$", "")
 	if h == "" then
@@ -57,6 +63,12 @@ o.validate = function(self, value)
 	return value
 end
 
+o = s:option(Value, "ssid_count", translate("WiFi 数量"))
+o.default = 3
+o.datatype = "range(1,32)"
+o.rmempty = false
+o.description = translate("输入要添加的行数，再点下方“添加 N 个 SSID”。只添加行，不会自动删除已有行；频段/线路再逐行设置。")
+
 -- ---------------------------------------------------------------------------
 -- Status / warnings
 -- ---------------------------------------------------------------------------
@@ -73,17 +85,17 @@ o.cfgvalue = function()
 		uci:foreach("passwall2", "nodes", function() nodes = nodes + 1 end)
 		out[#out + 1] = string.format(translate("可用线路：%d 个"), nodes)
 	else
-		out[#out + 1] = "<span style='color:#c00'>" .. translate("PassWall2：未安装") .. "</span>"
+		out[#out + 1] = "<span class='mw-err'>" .. translate("PassWall2：未安装") .. "</span>"
 	end
 
 	if has_pw and sys.call("pidof xray >/dev/null 2>&1 || pidof sing-box >/dev/null 2>&1") == 0 then
-		out[#out + 1] = translate("PassWall2：运行中")
+		out[#out + 1] = "<span class='mw-up'>" .. translate("PassWall2：运行中") .. "</span>"
 	else
-		out[#out + 1] = translate("PassWall2：未运行")
+		out[#out + 1] = "<span class='mw-down'>" .. translate("PassWall2：未运行") .. "</span>"
 	end
 
 	if sys.call("pidof clash >/dev/null 2>&1 || pidof mihomo >/dev/null 2>&1 || pidof clash_tun >/dev/null 2>&1") == 0 then
-		out[#out + 1] = "<span style='color:#c00'>" ..
+		out[#out + 1] = "<span class='mw-err'>" ..
 			translate("OpenClash 正在运行，请先停止，避免和 PassWall2 抢 nftables/DNS。") .. "</span>"
 	else
 		out[#out + 1] = translate("OpenClash：未运行（可以保留安装，但不要和 PassWall2 同时启动）")
@@ -92,7 +104,7 @@ o.cfgvalue = function()
 	local log = fs.readfile("/tmp/multiwifi-apply.log")
 	if log and #log > 0 then
 		out[#out + 1] = "<details><summary>" .. translate("上次应用日志") ..
-			"</summary><pre style='max-height:320px;overflow:auto;white-space:pre-wrap'>" ..
+			"</summary><pre class='mw-pre' style='max-height:320px'>" ..
 			util.pcdata(log) .. "</pre></details>"
 	end
 
@@ -107,9 +119,33 @@ o = s:option(DummyValue, "_notes")
 o.rawhtml = true
 o.cfgvalue = function()
 	return [=[
-<div style="line-height:1.75">
+<style>
+.mw-app { color: var(--text_color, inherit); }
+.mw-pre {
+	margin: 8px 0;
+	padding: 8px 10px;
+	background: var(--sectionbg_color2, rgba(127,127,127,.12));
+	border: 1px solid var(--border_color, rgba(127,127,127,.18));
+	border-radius: 6px;
+	color: var(--text_color, inherit);
+	white-space: pre-wrap;
+	overflow: auto;
+}
+.mw-app code {
+	padding: 0 .25em;
+	border-radius: 3px;
+	background: var(--inputbg_color, rgba(127,127,127,.12));
+	color: var(--text_color, inherit);
+}
+.mw-up { color: #27ae60; font-weight: bold; }
+.mw-down { color: var(--text_color, #888); opacity: .65; }
+.mw-err { color: #e74c3c; }
+#cbi-table-table .cbi-button { margin: 2px 6px 2px 0; }
+#cbi-table-table, #cbi-multiwifi-ssid { overflow-x: auto; }
+</style>
+<div class="mw-app" style="line-height:1.75">
 <p><b>工作方式：</b>一个 SSID = 一个独立 bridge/子网 = 一条 PassWall2 ACL。2.4G/5G 分开计数，每行选频段；同一 SSID 要双频请用“双频”一行，不要建两行同名。</p>
-<pre style="margin:8px 0;padding:8px 10px;background:rgba(127,127,127,.12);border-radius:4px;overflow:auto">SSID A ── br-mws_xxxxxx 192.168.80.1/24 ── PassWall2 ACL ── 香港节点
+<pre class="mw-pre">SSID A ── br-mws_xxxxxx 192.168.80.1/24 ── PassWall2 ACL ── 香港节点
 SSID B ── br-mws_yyyyyy 192.168.81.1/24 ── PassWall2 ACL ── 日本节点
 SSID C ── br-mws_zzzzzz 192.168.90.1/24 ── PassWall2 ACL ── 直连</pre>
 <ul style="margin:0 0 0 1.2em;list-style:disc">
@@ -120,6 +156,7 @@ SSID C ── br-mws_zzzzzz 192.168.90.1/24 ── PassWall2 ACL ── 直连</
 <li><b>应用：</b>“保存并应用”才会重启无线/防火墙/PassWall2；“保存”只写配置不生效。建议从 LAN 口操作，改无线可能瞬断 WiFi。</li>
 <li><b>回滚：</b>每次应用前会备份 network/dhcp/firewall/wireless/passwall2 和上一版 multiwifi；应用失败会自动回滚，也可以点“恢复上次应用的配置”手工回滚。</li>
 <li><b>数量：</b>2.4G 建议不超过 4 个 SSID，5G 不超过 8 个；每个非直连 SSID 会多一套 core + dnsmasq，2GB 内存开 4-8 个没问题。</li>
+<li><b>批量建行：</b>“WiFi 数量”只决定“添加 N 个 SSID”一次加几行；不会自动删除已有行，频段/线路再逐行设置。</li>
 <li><b>子网：</b>留空自动分配 /24；手填必须是 <code>x.x.x.1/24</code>，且不能和 LAN/WAN 或已有 SSID 冲突。</li>
 <li><b>原有 SSID：</b><code>default_radio0/1</code>（Dwrt-…）不由本页管理，保留原样。</li>
 <li><b>IPv6：</b>新 SSID 默认关闭 DHCPv6/RA，避免 PassWall2 IPv6 规则不完整导致泄漏；需要 IPv6 请单独配置。</li>
@@ -249,17 +286,17 @@ o = s:option(DummyValue, "_state", translate("状态"))
 o.rawhtml = true
 o.cfgvalue = function(self, section)
 	if self.map:get("global", "enabled") == "0" then
-		return "<span style='color:#888'>" .. translate("全局停用") .. "</span>"
+		return "<span class='mw-down'>" .. translate("全局停用") .. "</span>"
 	end
 	if self.map:get(section, "enabled") == "0" then
-		return "<span style='color:#888'>" .. translate("已停用") .. "</span>"
+		return "<span class='mw-down'>" .. translate("已停用") .. "</span>"
 	end
 	local net = net_for(section)
 	local ip = uci:get("network", net, "ipaddr")
 	local raw = sys.exec("ubus call network.interface." .. net .. " status 2>/dev/null")
 	local st = jsonc.parse(raw or "")
 	local up = st and st.up
-	local html = up and "<span style='color:#080'>UP</span>" or "<span style='color:#888'>DOWN</span>"
+	local html = up and "<span class='mw-up'>UP</span>" or "<span class='mw-down'>DOWN</span>"
 	if ip and ip ~= "" then
 		html = html .. "<br/>" .. util.pcdata(ip) .. "/24"
 	end
@@ -276,7 +313,7 @@ end
 local actions = { [1] = {} }
 s = m:section(Table, actions, translate("操作"))
 s.template = "cbi/tblsection"
-s.description = translate("“保存并应用”会提交本页配置并立即生效；“保存”只写配置，不重启无线。下面的按钮用于批量启停或重试。")
+s.description = translate("“保存并应用”会提交本页配置并立即生效；“保存”只写配置，不重启无线。下面的按钮用于批量启停、按数量建行或重试。")
 
 o = s:option(Button, "_enable_all", " ")
 o.inputtitle = translate("全部启用")
@@ -288,6 +325,28 @@ o.write = function()
 	m.uci:set("multiwifi", "global", "enabled", "1")
 	m.uci:commit("multiwifi")
 	sys.call("/usr/libexec/multiwifi-apply apply >/dev/null 2>&1")
+	http.redirect(m.redirect)
+end
+
+o = s:option(Button, "_add_rows", " ")
+o.inputtitle = translate("添加 N 个 SSID")
+o.inputstyle = "apply"
+o.write = function()
+	local n = tonumber(m:formvalue("cbid.multiwifi.global.ssid_count") or "")
+	n = n and math.floor(n) or 0
+	if n < 1 then n = 1 end
+	if n > 32 then n = 32 end
+	for i = 1, n do
+		local sid = m.uci:add("multiwifi", "ssid")
+		if sid then
+			m.uci:set("multiwifi", sid, "enabled", "1")
+			m.uci:set("multiwifi", sid, "band", "2g")
+			m.uci:set("multiwifi", sid, "encryption", "psk2")
+			m.uci:set("multiwifi", sid, "node", "__direct__")
+			m.uci:set("multiwifi", sid, "isolate", "1")
+		end
+	end
+	m.uci:commit("multiwifi")
 	http.redirect(m.redirect)
 end
 

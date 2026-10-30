@@ -195,6 +195,35 @@ jobs:
           done < /tmp/ctx
           exit 1
 
+      # Build the vendor wifi module before the rootfs so a compile error
+      # fails in ~40 minutes instead of after the full image build.  Only
+      # present on the vendor-wifi branch; on main the package directory is
+      # absent and the step is skipped.
+      - name: Compile vendor wifi driver (fail fast)
+        if: ${{ hashFiles('lede/package/mtk/drivers/mt_wifi/Makefile') != '' }}
+        run: |
+          cd lede
+          set -o pipefail
+          if make -j"$(nproc)" target/linux/compile 2>&1 | tee /tmp/kernel-build.log \
+             && make -j"$(nproc)" package/mtk/drivers/mt_wifi/compile V=s 2>&1 | tee /tmp/vendor-wifi.log; then
+            exit 0
+          fi
+
+          LOG=/tmp/vendor-wifi.log
+          [ -s "$LOG" ] || LOG=/tmp/kernel-build.log
+          CTX=$(grep -B15 -A6 -m1 -E 'error:|fatal error:|Error [0-9]+' "$LOG" || true)
+          [ -n "$CTX" ] || CTX=$(tail -40 "$LOG")
+          {
+            echo '### vendor wifi driver failed'
+            echo '```'
+            printf '%s\n' "$CTX"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$CTX" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done
+          exit 1
+
       - name: Download packages
         timeout-minutes: 60
         run: |
@@ -213,13 +242,19 @@ jobs:
             exit 0
           fi
 
-          echo "::warning::parallel build failed, retrying serially for a readable error"
-          make -j1 V=s 2>&1 | tee /tmp/build-serial.log || true
+          # The failure context is already in /tmp/build.log.  Do not retry
+          # serially: that rebuilds the whole tree for hours just to print the
+          # same error again, and GitHub's log download is subject to an
+          # account egress quota, so the log may not be retrievable at all.
+          # Annotations and the step summary are the reliable channel.
+          CTX=$(grep -B12 -A6 -m1 -E 'error:|fatal error:|Error [0-9]+' /tmp/build.log || true)
+          [ -n "$CTX" ] || CTX=$(grep -B9 -m1 '\*\*\* \[' /tmp/build.log || true)
+          [ -n "$CTX" ] || CTX=$(tail -40 /tmp/build.log)
 
           {
             echo "### build failed"
             echo '```'
-            tail -60 /tmp/build-serial.log
+            printf '%s\n' "$CTX"
             echo '```'
             echo
             echo "### disk"
@@ -229,11 +264,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # The job log needs a GitHub login; error annotations do not, so put
-          # the context around the first hard failure into the UI. The line
-          # before "*** [...]" is usually the patch/gcc invocation that broke.
-          CTX=$(grep -B9 -m1 '\*\*\* \[' /tmp/build-serial.log || true)
-          [ -n "$CTX" ] || CTX=$(tail -12 /tmp/build-serial.log)
           printf '%s\n' "$CTX" | while IFS= read -r line; do
             [ -n "$line" ] && echo "::error::${line:0:900}"
           done

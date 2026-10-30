@@ -20,8 +20,13 @@ BACKUP_MADE=0
 APPLY_OK=0
 
 mkdir -p "$STATE" "$BACKUP_ROOT"
-: > "$LOG"
-exec >> "$LOG" 2>&1
+
+# The apply/restore modes log to a file; test writes its report to stdout so
+# the LuCI button can capture the result, so skip the redirection for it.
+if [ "$MODE" != "test" ]; then
+	: > "$LOG"
+	exec >> "$LOG" 2>&1
+fi
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 die() { log "ERROR: $*"; exit 1; }
@@ -413,8 +418,75 @@ if [ "$MODE" = "restore" ]; then
 	restore_configs
 	exit $?
 fi
+
+# test <net>: simulate a client of one SSID row and check DNS + HTTP.
+# Uses a temporary netns with a veth attached to the row's bridge, so the
+# traffic goes through exactly the PassWall2 ACL rules of that row. Prints
+# a short report to stdout; exit 0 only when both DNS and HTTP work.
+if [ "$MODE" = "test" ]; then
+	NET=${2:-}
+	if [ -z "$NET" ]; then
+		echo "usage: $0 test <mws_net>" >&2
+		exit 2
+	fi
+	BR="br-$NET"
+	IP=$(uci -q get "network.$NET.ipaddr")
+	if [ -z "$IP" ]; then
+		echo "no such network: $NET" >&2
+		exit 2
+	fi
+	STATE=/tmp/multiwifi-test
+	mkdir -p "$STATE"
+	LOG="$STATE/log"
+	: > "$LOG"
+
+	NS=mwtest
+	VH=veth-mw-host
+	VC=veth-mw
+	cleanup() {
+		ip netns del "$NS" 2>/dev/null || true
+		ip link del "$VH" 2>/dev/null || true
+	}
+	cleanup
+	trap cleanup EXIT INT TERM
+
+	ip netns add "$NS" 2>>"$LOG" || { echo "netns add failed"; exit 2; }
+	ip link add "$VC" type veth peer name "$VH" 2>>"$LOG"
+	ip link set "$VH" master "$BR" up 2>>"$LOG"
+	ip link set "$VC" netns "$NS" 2>>"$LOG"
+	ip netns exec "$NS" ip link set lo up
+	ip netns exec "$NS" ip link set "$VC" up
+	# x.y.z.250 keeps clear of the DHCP pool (.100-.249)
+	ip netns exec "$NS" ip addr add "${IP%.*}.250/24" dev "$VC"
+	ip netns exec "$NS" ip route add default via "$IP"
+
+	DNS_OK=0
+	HTTP_OK=0
+
+	# DNS through the row's dnsmasq (the router IP is the DNS server)
+	if ip netns exec "$NS" nslookup example.com "$IP" >/dev/null 2>&1; then
+		DNS_OK=1
+	fi
+
+	# HTTP through the row's ACL path (retry: a cold xray outbound or a slow
+	# first SOCKS hop can make a single attempt flap)
+	HTTP_OK=0
+	try=1
+	while [ "$try" -le 3 ]; do
+		if ip netns exec "$NS" curl -sS --max-time 10 -o /dev/null http://1.1.1.1 2>>"$LOG"; then
+			HTTP_OK=1
+			break
+		fi
+		try=$((try + 1))
+	done
+
+	echo "net=$NET dns=$DNS_OK http=$HTTP_OK"
+	[ "$DNS_OK" = "1" ] && [ "$HTTP_OK" = "1" ]
+	exit $?
+fi
+
 if [ "$MODE" != "apply" ]; then
-	echo "usage: $0 [apply|restore]" >&2
+	echo "usage: $0 [apply|restore|test <net>]" >&2
 	exit 2
 fi
 
@@ -446,6 +518,12 @@ if [ -f /etc/config/passwall2 ] && [ -n "$(uci_get 'passwall2.@global[0]')" ]; t
 	[ -n "$PASSWALL2_ENABLED" ] || PASSWALL2_ENABLED=0
 fi
 
+# Batch template defaults. Empty means "fall back to the per-row value" so
+# old configs (created before the template existed) keep working.
+TEMPLATE_KEY=$(uci_get "multiwifi.template.key")
+TEMPLATE_ENC=$(uci_get "multiwifi.template.encryption")
+TEMPLATE_ISOLATE=$(uci_get "multiwifi.template.isolate")
+
 ROWS="$STATE/rows.$$"
 PLAN="$STATE/plan.$$"
 : > "$ROWS"
@@ -459,18 +537,24 @@ GENERATED_NETS=""
 for sid in $(ssid_sections); do
 	ssid=$(uci_get "$CONFIG.$sid.ssid")
 	band=$(uci_get "$CONFIG.$sid.band")
-	enc=$(uci_get "$CONFIG.$sid.encryption")
-	key=$(uci_get "$CONFIG.$sid.key")
 	node=$(uci_get "$CONFIG.$sid.node")
 	enabled=$(uci_get "$CONFIG.$sid.enabled")
-	isolate=$(uci_get "$CONFIG.$sid.isolate")
 	subnet=$(uci_get "$CONFIG.$sid.subnet")
 
-	[ -n "$band" ] || band=2g
+	# Password/encryption/isolation are global template values; per-row
+	# fallback keeps pre-template configs working.
+	enc="$TEMPLATE_ENC"
+	[ -n "$enc" ] || enc=$(uci_get "$CONFIG.$sid.encryption")
 	[ -n "$enc" ] || enc=psk2
+	key="$TEMPLATE_KEY"
+	[ -n "$key" ] || key=$(uci_get "$CONFIG.$sid.key")
+	isolate="$TEMPLATE_ISOLATE"
+	[ -n "$isolate" ] || isolate=$(uci_get "$CONFIG.$sid.isolate")
+	[ -n "$isolate" ] || isolate=1
+
+	[ -n "$band" ] || band=2g
 	[ -n "$node" ] || node=__direct__
 	[ -n "$enabled" ] || enabled=1
-	[ -n "$isolate" ] || isolate=1
 
 	# A disabled row is simply absent from the generated config. This keeps
 	# "全部停用" one click even when it contains half-finished rows.
@@ -659,8 +743,23 @@ cleanup_cfg wireless wifi-iface "$EXPECTED_WIFI"
 cleanup_cfg passwall2 acl_rule "$EXPECTED_ACL"
 cleanup_cfg passwall2 acl "$EXPECTED_ACL"
 
-if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ] && [ "$SSID_COUNT" -gt 0 ]; then
-	uci -q set "passwall2.@global[0].acl_enable=1"
+if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ]; then
+	if [ "$SSID_COUNT" -gt 0 ]; then
+		uci -q set "passwall2.@global[0].acl_enable=1"
+	else
+		# No SSIDs: only turn the ACL switch off when the user has no
+		# manual (non-mws_) ACLs left; otherwise leave their setup alone.
+		other_acls=0
+		for s in $(uci -q show passwall2 | sed -n "s/^passwall2\.\([^.=]*\)=$ACL_SCHEMA$/\1/p"); do
+			case "$s" in
+				${PREFIX}*) ;;
+				*) other_acls=1 ;;
+			esac
+		done
+		if [ "$other_acls" = "0" ]; then
+			uci -q set "passwall2.@global[0].acl_enable=0"
+		fi
+	fi
 fi
 
 for c in network dhcp firewall wireless passwall2; do

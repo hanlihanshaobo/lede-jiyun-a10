@@ -1,4 +1,19 @@
 config global 'global'
 	option enabled '1'
 	option subnet_base '192.168.80.0/24'
-	option ssid_count '3'
+
+config template 'template'
+	option ssid_prefix 'WiFi'
+	option ssid_start '1'
+	option count_24 '1'
+	option count_5g '1'
+	option encryption 'psk2'
+	option isolate '1'
+	option node '__direct__'
+	option replace_rows '1'
+
+config preset_ui 'preset_ui'
+	option select ''
+	option name ''
+
+config import_ui 'import_ui'

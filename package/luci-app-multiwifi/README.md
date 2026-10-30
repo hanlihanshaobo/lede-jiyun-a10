@@ -44,6 +44,7 @@ LuCI：**网络 → 多 SSID 分流**
 
 - 只有“启用”的行会生成 network/wireless/firewall/ACL；取消勾选或全局停用会移除这些生成段，但保留 `/etc/config/multiwifi` 里的 SSID 配置，方便下次再开。
 - PassWall2 必须先完成初始化（至少打开一次并配置节点），并保持运行；本工具只写 ACL，不会替你启用 PassWall2 全局开关。
+- PassWall2 全局关闭时，会额外生成一条 `mws_unmatched_direct`（mode=0）ACL，把未匹配流量保持直连，避免 PassWall2 默认 ACL 把 LAN/默认 SSID 带到全局节点；PassWall2 全局开启时不加这条。这条只覆盖客户端，路由器本机流量仍受 PassWall2“本机代理”设置影响。
 - 每个非“直连”的 SSID 会在 PassWall2 里生成一条 `acl_rule`，并启动对应的 core/dnsmasq 实例；4-8 个 SSID 在 2GB 内存的 A10 上没问题，不建议开几十个。
 - 2.4G 建议不超过 4 个 BSS，5G 建议不超过 8 个 BSS（beacon/airtime 限制）。
 - OpenClash 可以保留安装，但不要和 PassWall2 同时运行；页面会检测并提示。

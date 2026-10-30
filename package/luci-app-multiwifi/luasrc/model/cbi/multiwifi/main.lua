@@ -114,6 +114,8 @@ SSID B ── br-mws_yyyyyy 192.168.81.1/24 ── PassWall2 ACL ── 日本�
 SSID C ── br-mws_zzzzzz 192.168.90.1/24 ── PassWall2 ACL ── 直连</pre>
 <ul style="margin:0 0 0 1.2em;list-style:disc">
 <li><b>先决条件：</b>PassWall2 必须先打开一次、配置好节点并保持运行。本工具只写 ACL，不会替你启用 PassWall2 全局开关。</li>
+<li><b>全局开关：</b>PassWall2 全局关闭时，本工具会追加一条“未匹配流量直连”ACL，避免 PassWall2 的默认 ACL 把 LAN/默认 SSID 也带到全局节点；全局开启时则保持跟随全局。</li>
+<li><b>本机流量：</b>上面这条只覆盖客户端；路由器自己的 opkg/NTP/DDNS 仍受 PassWall2“本机代理”设置影响。全局关闭时如遇本机无网，请在 PassWall2 的“其他设置”里关闭本机代理。</li>
 <li><b>OpenClash：</b>可以保留安装，但不要和 PassWall2 同时运行；页面顶部会检测并提示。</li>
 <li><b>应用：</b>“保存并应用”才会重启无线/防火墙/PassWall2；“保存”只写配置不生效。建议从 LAN 口操作，改无线可能瞬断 WiFi。</li>
 <li><b>回滚：</b>每次应用前会备份 network/dhcp/firewall/wireless/passwall2 和上一版 multiwifi；应用失败会自动回滚，也可以点“恢复上次应用的配置”手工回滚。</li>

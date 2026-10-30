@@ -250,4 +250,29 @@ say "add PassWall2 geo-data feed"
 	./scripts/feeds install -p passwall_packages v2ray-geodata
 )
 
+# ---------------------------------------------------------------------------
+# 10. luci-app-multiwifi as a rootfs overlay
+#
+# make defconfig did not pick this package up reliably when it was copied
+# into package/ (the CI assertion failed), so ship it the same way as the
+# other board files: put the pure Lua/shell files into the global files/
+# overlay. PassWall2 (the runtime dependency) is already selected above.
+# The source package remains in package/luci-app-multiwifi for standalone
+# builds, but the image does not depend on it being selected by Kconfig.
+# ---------------------------------------------------------------------------
+say "install luci-app-multiwifi overlay"
+mkdir -p \
+	"$LEDE/files/usr/lib/lua/luci/controller" \
+	"$LEDE/files/usr/lib/lua/luci/model/cbi/multiwifi" \
+	"$LEDE/files/usr/libexec" \
+	"$LEDE/files/etc/config"
+install -m 0644 "$ROOT/package/luci-app-multiwifi/luasrc/controller/multiwifi.lua" \
+	"$LEDE/files/usr/lib/lua/luci/controller/multiwifi.lua"
+install -m 0644 "$ROOT/package/luci-app-multiwifi/luasrc/model/cbi/multiwifi/main.lua" \
+	"$LEDE/files/usr/lib/lua/luci/model/cbi/multiwifi/main.lua"
+install -m 0755 "$ROOT/package/luci-app-multiwifi/root/usr/libexec/multiwifi-apply" \
+	"$LEDE/files/usr/libexec/multiwifi-apply"
+install -m 0644 "$ROOT/package/luci-app-multiwifi/root/etc/config/multiwifi" \
+	"$LEDE/files/etc/config/multiwifi"
+
 say "done"

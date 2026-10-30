@@ -437,8 +437,11 @@ collect_existing_nets
 detect_acl_schema
 
 HAS_PASSWALL2=0
+PASSWALL2_ENABLED=0
 if [ -f /etc/config/passwall2 ] && [ -n "$(uci_get 'passwall2.@global[0]')" ]; then
 	HAS_PASSWALL2=1
+	PASSWALL2_ENABLED=$(uci_get "passwall2.@global[0].enabled")
+	[ -n "$PASSWALL2_ENABLED" ] || PASSWALL2_ENABLED=0
 fi
 
 ROWS="$STATE/rows.$$"
@@ -620,6 +623,30 @@ while IFS='	' read -r sid ssid band gw cidr mode node enabled enc key isolate; d
 	log "应用 SSID [$ssid] band=$band subnet=$cidr node=$node mode=$mode enabled=$enabled"
 	apply_row "$sid" "$ssid" "$band" "$gw" "$cidr" "$mode" "$node" "$enabled" "$enc" "$key" "$isolate"
 done < "$PLAN"
+
+# PassWall2 still emits its default ACL when acl_enable=1, even if the
+# global switch is off; that default would send unmatched LAN traffic to the
+# stale global node. When the global switch is off, add a final catch-all
+# direct ACL (after all per-SSID ACLs) so only the SSIDs configured here are
+# proxied. When the global switch is on, leave unmatched traffic following
+# the user's global PassWall2 node.
+if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ] && [ "$SSID_COUNT" -gt 0 ] && [ "$PASSWALL2_ENABLED" != "1" ]; then
+	uci -q delete "passwall2.mws_unmatched_direct" || true
+	uci -q set "passwall2.mws_unmatched_direct=$ACL_SCHEMA"
+	uci -q set "passwall2.mws_unmatched_direct.enabled=1"
+	uci -q set "passwall2.mws_unmatched_direct.remarks=MW: unmatched direct"
+	uci -q set "passwall2.mws_unmatched_direct.mode=0"
+	uci -q set "passwall2.mws_unmatched_direct.tcp_redir_ports=1:65535"
+	uci -q set "passwall2.mws_unmatched_direct.udp_redir_ports=1:65535"
+	uci -q delete "passwall2.mws_unmatched_direct.node" || true
+	uci -q delete "passwall2.mws_unmatched_direct.interface" || true
+	uci -q delete "passwall2.mws_unmatched_direct.sources" || true
+	uci -q delete "passwall2.mws_unmatched_direct.tcp_no_redir_ports" || true
+	uci -q delete "passwall2.mws_unmatched_direct.udp_no_redir_ports" || true
+	set_acl_dns_defaults mws_unmatched_direct
+	EXPECTED_ACL="$EXPECTED_ACL mws_unmatched_direct"
+	log "PassWall2 全局关闭：追加未匹配流量直连 ACL"
+fi
 
 cleanup_cfg network interface "$EXPECTED_NET"
 cleanup_cfg dhcp dhcp "$EXPECTED_NET"

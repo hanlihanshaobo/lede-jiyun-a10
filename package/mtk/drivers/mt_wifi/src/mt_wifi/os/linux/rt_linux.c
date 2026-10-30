@@ -371,8 +371,13 @@ static inline VOID __RTMP_OS_Del_Timer(
 	IN OS_NDIS_MINIPORT_TIMER * pTimer,
 	OUT BOOLEAN *pCancelled)
 {
-	if (timer_pending(pTimer))
+	if (timer_pending(pTimer)) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+		*pCancelled = timer_delete_sync(pTimer);
+#else
 		*pCancelled = del_timer_sync(pTimer);
+#endif
+	}
 	else
 		*pCancelled = TRUE;
 }

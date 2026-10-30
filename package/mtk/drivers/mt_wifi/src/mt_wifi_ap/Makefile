@@ -3005,3 +3005,9 @@ endif
 MODULE_FLAGS=$(EXTRA_CFLAGS)
 export MODULE_FLAGS
 obj-m+=$(SRC_EMBEDDED_DIR)/plug_in/
+
+# Linux 6.12+ kbuild no longer consumes the legacy EXTRA_CFLAGS export for
+# out-of-tree modules, so the include paths / -D flags above have to be
+# forwarded explicitly.  Without this the module fails at the first
+# #include "rt_config.h".
+ccflags-y += $(EXTRA_CFLAGS)

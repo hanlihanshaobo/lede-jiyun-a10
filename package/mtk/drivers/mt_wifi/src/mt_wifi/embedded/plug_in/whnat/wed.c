@@ -231,7 +231,7 @@ struct sk_buff *alloc_dma_tx_pkt(
 
 	if (pkt) {
 		*vaddr = (void *) pkt->data;
-		*paddr = dma_map_single(&pdev->dev, *vaddr, len, PCI_DMA_TODEVICE);
+		*paddr = dma_map_single(&pdev->dev, *vaddr, len, DMA_TO_DEVICE);
 	} else {
 		*vaddr = (void *) NULL;
 		*paddr = (dma_addr_t) 0;
@@ -253,7 +253,7 @@ int free_dma_tx_pkt(
 	if (pkt == NULL)
 		return -1;
 
-	dma_unmap_single(&pdev->dev, pa, len, PCI_DMA_FROMDEVICE);
+	dma_unmap_single(&pdev->dev, pa, len, DMA_FROM_DEVICE);
 	dev_kfree_skb_any(pkt);
 	return 0;
 }

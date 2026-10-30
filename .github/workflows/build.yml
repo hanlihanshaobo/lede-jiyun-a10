@@ -211,16 +211,27 @@ jobs:
         run: |
           cd lede
           set -o pipefail
-          if make -j"$(nproc)" target/linux/compile 2>&1 | tee /tmp/kernel-build.log \
+          # `target/linux/compile` is a buildbot-style stage: it does NOT pull
+          # in tools/ and toolchain/ the way the top-level `make` does.  On a
+          # clean runner kbuild then dies in ~10s on a missing
+          # aarch64-openwrt-linux-gnu-gcc, hidden behind subdir.mk's silent
+          # "ERROR: target/linux failed to build."  Build the cross toolchain
+          # first; it is reused by the later full build, so nothing is wasted.
+          if make -j"$(nproc)" tools/install 2>&1 | tee /tmp/tools.log \
+             && make -j"$(nproc)" toolchain/install 2>&1 | tee /tmp/toolchain.log \
+             && make -j"$(nproc)" target/linux/compile V=s 2>&1 | tee /tmp/kernel-build.log \
              && make -j"$(nproc)" package/mtk/drivers/mt_wifi/compile V=s 2>&1 | tee /tmp/vendor-wifi.log; then
             exit 0
           fi
 
-          LOG=/tmp/vendor-wifi.log
-          [ -s "$LOG" ] || LOG=/tmp/kernel-build.log
+          # Pick the log of the stage that actually failed.  subdir.mk hides
+          # the kernel sub-make output unless V=s, hence the -B25 window.
+          for LOG in /tmp/vendor-wifi.log /tmp/kernel-build.log /tmp/toolchain.log /tmp/tools.log; do
+            [ -s "$LOG" ] && break
+          done
           # Prefer the first real compiler diagnostic over the trailing
           # "make: *** [...] Error 1" stack.
-          CTX=$(grep -B18 -A8 -m1 -E 'error: |fatal error: ' "$LOG" || true)
+          CTX=$(grep -B25 -A10 -m1 -E 'error: |fatal error: |No such file|not found' "$LOG" || true)
           [ -n "$CTX" ] || CTX=$(grep -B15 -A6 -m1 -E 'Error [0-9]+' "$LOG" || true)
           [ -n "$CTX" ] || CTX=$(tail -60 "$LOG")
           {
@@ -235,6 +246,7 @@ jobs:
           # Keep the logs inside the workspace so upload-artifact can read them.
           cp /tmp/kernel-build.log kernel-build.log 2>/dev/null || true
           cp /tmp/vendor-wifi.log vendor-wifi.log 2>/dev/null || true
+          cp "$LOG" failed-stage.log 2>/dev/null || true
           exit 1
 
       - name: Upload vendor wifi build log
@@ -243,6 +255,7 @@ jobs:
         with:
           name: vendor-wifi-build-log
           path: |
+            lede/failed-stage.log
             lede/kernel-build.log
             lede/vendor-wifi.log
           retention-days: 7

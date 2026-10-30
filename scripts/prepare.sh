@@ -147,6 +147,18 @@ if [ -n "${RK_PDIR:-}" ] && [ -d "$RK_PDIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 6b. vendor (closed-source) MTK wifi driver package
+#
+# The stock firmware ships a 5.10.160-only mt_wifi.ko; the source ported to
+# 6.6 by the NSY G68 Plus tree (same RK3568 + MT7916 hardware) is vendored in
+# package/mtk and built against this kernel.  The mainline mt7915e must not be
+# selected at the same time (both bind the same PCIe devices).
+# ---------------------------------------------------------------------------
+say "install MTK wifi driver package"
+mkdir -p "$LEDE/package"
+cp -a "$ROOT/package/mtk" "$LEDE/package/"
+
+# ---------------------------------------------------------------------------
 # 6. rootfs overlay (target base-files)
 # ---------------------------------------------------------------------------
 say "install rootfs overlay"

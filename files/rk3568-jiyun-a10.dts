@@ -777,6 +777,15 @@
 
 &usb_host1_xhci {
 	dr_mode = "host";
+	/*
+	 * The USB3 SuperSpeed port of this controller has no device attached on
+	 * this board and its link flaps: every ~0.6 s a port status change makes
+	 * the hub workqueue run hub_port_reset, which never completes (kworker
+	 * stuck in D, load average 1.0 with an idle CPU). Forcing high-speed
+	 * removes the SuperSpeed root hub entirely; the port still works as a
+	 * normal USB2 host (modem/storage).
+	 */
+	maximum-speed = "high-speed";
 	status = "okay";
 	snps,dis_enblslpm_quirk;
 	snps,dis-u2-freeclk-exists-quirk;

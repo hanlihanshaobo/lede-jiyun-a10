@@ -153,9 +153,12 @@ jobs:
           # package scan, so a stale tmp/ used to leave it out of .packagedeps;
           # the build then failed only after the 30-minute kernel compile with
           # "No rule to make target package/mtk/drivers/mt_wifi/compile".
-          for sym in CONFIG_PACKAGE_kmod-mt_wifi CONFIG_PACKAGE_wifi-profile; do
+          for sym in CONFIG_PACKAGE_kmod-mt_wifi CONFIG_PACKAGE_wifi-profile \
+                     CONFIG_PACKAGE_wifi-dats CONFIG_PACKAGE_kmod-cfg80211; do
             grep -q "^${sym}=y$" .config || {
               echo "ERROR: ${sym} not selected"
+              grep -E 'CONFIG_(PACKAGE_(kmod-mt_wifi|wifi-profile|wifi-dats|kmod-cfg80211)|MTK_(MT_WIFI|MT_AP_SUPPORT|CFG80211_SUPPORT))' .config || true
+              grep -E 'kmod-mt_wifi|wifi-dats|wifi-profile|kmod-cfg80211' tmp/.packagedeps 2>/dev/null | head -20 || true
               ls -la package/mtk/drivers/mt_wifi || true
               cat logs/package/mtk/drivers/mt_wifi/dump.txt 2>/dev/null || true
               exit 1

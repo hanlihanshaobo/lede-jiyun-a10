@@ -180,6 +180,17 @@ fi
 # package/mtk and built against this kernel.  The mainline mt7915e must not be
 # selected at the same time (both bind the same PCIe devices).
 # ---------------------------------------------------------------------------
+# Lean's old MTK driver stack is not used here and actively breaks the build:
+#   * mt7615d/config.in has a recursive MTK_WHNAT_SUPPORT <-> kmod-hw_nat
+#     dependency that makes scripts/config/conf segfault during defconfig;
+#   * its drivers/mt_wifi directory basename collides with the vendor package
+#     in scan.awk, which silently drops one of the two from the file list.
+# The A10 uses package/mtk (mt_wifi_a10 + wifi-profile + luci-app-mtk) instead.
+if [ -d "$LEDE/package/lean/mt" ]; then
+	say "drop Lean's obsolete MTK wifi stack"
+	rm -rf "$LEDE/package/lean/mt"
+fi
+
 say "install MTK wifi driver package"
 mkdir -p "$LEDE/package"
 cp -a "$ROOT/package/mtk" "$LEDE/package/"

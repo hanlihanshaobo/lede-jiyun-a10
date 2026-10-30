@@ -152,16 +152,16 @@ jobs:
           # Vendor wifi driver.  It is added by prepare.sh after the initial
           # package scan, so a stale tmp/ used to leave it out of .packagedeps;
           # the build then failed only after the 30-minute kernel compile with
-          # "No rule to make target package/mtk/drivers/mt_wifi/compile".
+          # "No rule to make target package/mtk/drivers/mt_wifi_a10/compile".
           echo "== vendor wifi package scan =="
-          ls -l package/mtk/drivers/mt_wifi/Makefile
-          grep -n 'call KernelPackage' package/mtk/drivers/mt_wifi/Makefile || true
+          ls -l package/mtk/drivers/mt_wifi_a10/Makefile
+          grep -n 'call KernelPackage' package/mtk/drivers/mt_wifi_a10/Makefile || true
           grep -n 'mtk/drivers/mt_wifi' tmp/info/.files-packageinfo-* 2>/dev/null || true
-          grep -n -A20 'Source-Makefile: package/mtk/drivers/mt_wifi/Makefile' tmp/.packageinfo 2>/dev/null | head -30 || true
+          grep -n -A20 'Source-Makefile: package/mtk/drivers/mt_wifi_a10/Makefile' tmp/.packageinfo 2>/dev/null | head -30 || true
           grep -n 'mtk/drivers/mt_wifi' tmp/.packagedeps 2>/dev/null || true
-          if [ -f logs/package/mtk/drivers/mt_wifi/dump.txt ]; then
+          if [ -f logs/package/mtk/drivers/mt_wifi_a10/dump.txt ]; then
             echo "== vendor wifi scan dump =="
-            cat logs/package/mtk/drivers/mt_wifi/dump.txt
+            cat logs/package/mtk/drivers/mt_wifi_a10/dump.txt
           fi
           for sym in CONFIG_PACKAGE_kmod-mt_wifi CONFIG_PACKAGE_wifi-profile \
                      CONFIG_PACKAGE_wifi-dats CONFIG_PACKAGE_luci-app-mtk \
@@ -171,8 +171,8 @@ jobs:
               echo "ERROR: ${sym} not selected"
               grep -E 'CONFIG_(PACKAGE_(kmod-mt_wifi|wifi-profile|wifi-dats|kmod-cfg80211)|MTK_(MT_WIFI|MT_AP_SUPPORT|CFG80211_SUPPORT))' .config || true
               grep -E 'kmod-mt_wifi|wifi-dats|wifi-profile|kmod-cfg80211' tmp/.packagedeps 2>/dev/null | head -20 || true
-              ls -la package/mtk/drivers/mt_wifi || true
-              cat logs/package/mtk/drivers/mt_wifi/dump.txt 2>/dev/null || true
+              ls -la package/mtk/drivers/mt_wifi_a10 || true
+              cat logs/package/mtk/drivers/mt_wifi_a10/dump.txt 2>/dev/null || true
               exit 1
             }
           done
@@ -241,7 +241,7 @@ jobs:
       # absent and the step is skipped.  This must run *after* "Download
       # packages": target/linux/compile needs the kernel tarball in dl/.
       - name: Compile vendor wifi driver (fail fast)
-        if: ${{ hashFiles('lede/package/mtk/drivers/mt_wifi/Makefile') != '' }}
+        if: ${{ hashFiles('lede/package/mtk/drivers/mt_wifi_a10/Makefile') != '' }}
         run: |
           cd lede
           set -o pipefail
@@ -254,7 +254,7 @@ jobs:
           if make -j"$(nproc)" tools/install 2>&1 | tee /tmp/tools.log \
              && make -j"$(nproc)" toolchain/install 2>&1 | tee /tmp/toolchain.log \
              && make -j"$(nproc)" target/linux/compile V=s 2>&1 | tee /tmp/kernel-build.log \
-             && make -j"$(nproc)" package/mtk/drivers/mt_wifi/compile V=s 2>&1 | tee /tmp/vendor-wifi.log; then
+             && make -j"$(nproc)" package/mtk/drivers/mt_wifi_a10/compile V=s 2>&1 | tee /tmp/vendor-wifi.log; then
             exit 0
           fi
 
@@ -284,7 +284,7 @@ jobs:
           exit 1
 
       - name: Upload vendor wifi build log
-        if: failure() && hashFiles('lede/package/mtk/drivers/mt_wifi/Makefile') != ''
+        if: failure() && hashFiles('lede/package/mtk/drivers/mt_wifi_a10/Makefile') != ''
         uses: actions/upload-artifact@v4
         with:
           name: vendor-wifi-build-log

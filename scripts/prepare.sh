@@ -89,7 +89,7 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$
 # WEXT stack, which makes the driver fail to compile on 'wireless_handlers'
 # (and leaves iwpriv dead even if it did build).  Only touch the config when
 # the vendor package is actually present, so main stays WEXT-free.
-if [ -d "$ROOT/package/mtk/drivers/mt_wifi" ]; then
+if [ -d "$ROOT/package/mtk/drivers/mt_wifi_a10" ]; then
 	say "enable WEXT for the vendor mt_wifi driver"
 	# WIRELESS_EXT/WEXT_PRIV have no prompt upstream, so olddefconfig would
 	# drop the values written below.  Make them visible first.

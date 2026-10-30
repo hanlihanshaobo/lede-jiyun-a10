@@ -84,6 +84,26 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$
 	exit 1
 }
 
+# The vendor mt_wifi driver still registers net_device.wireless_handlers and
+# serves iwpriv through WEXT.  LEDE's 6.12+ generic config drops the whole
+# WEXT stack, which makes the driver fail to compile on 'wireless_handlers'
+# (and leaves iwpriv dead even if it did build).  Only touch the config when
+# the vendor package is actually present, so main stays WEXT-free.
+if [ -d "$ROOT/package/mtk/drivers/mt_wifi" ]; then
+	say "enable WEXT for the vendor mt_wifi driver"
+	sed \
+		-e 's/^# CONFIG_WIRELESS_EXT is not set/CONFIG_WIRELESS_EXT=y/' \
+		-e 's/^# CONFIG_WEXT_CORE is not set/CONFIG_WEXT_CORE=y/' \
+		-e 's/^# CONFIG_WEXT_PRIV is not set/CONFIG_WEXT_PRIV=y/' \
+		-e 's/^# CONFIG_WEXT_SPY is not set/CONFIG_WEXT_SPY=y/' \
+		-e 's/^# CONFIG_WEXT_PROC is not set/CONFIG_WEXT_PROC=y/' \
+		"$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
+	grep -q '^CONFIG_WIRELESS_EXT=y$' "$KCFG" || {
+		echo "ERROR: could not enable WEXT in $KCFG" >&2
+		exit 1
+	}
+fi
+
 # ---------------------------------------------------------------------------
 # 5. drop generic patches that cannot apply here
 #

@@ -3020,3 +3020,15 @@ ccflags-y += -Wno-error=incompatible-pointer-types \
              -Wno-error=implicit-function-declaration \
              -Wno-error=int-conversion \
              -Wno-error=return-mismatch
+
+# CONFIG_KTHREAD is an invisible kernel symbol and never reaches OpenWrt's
+# .config, so the vendor check above leaves KTHREAD_SUPPORT undefined and the
+# driver falls back to daemonize()/allow_signal()/complete_and_exit(), all
+# removed from modern kernels (kernel_thread() also lost its 3-argument form).
+# Use the kthread API instead.
+ccflags-y += -DKTHREAD_SUPPORT
+
+# OpenWrt passes the kernel's CONFIG_WEXT_* values to make, not to the C
+# preprocessor, so the driver's iwpriv tables were compiled out.  Define them
+# here to match the WEXT symbols enabled by scripts/prepare.sh.
+ccflags-y += -DCONFIG_WEXT_PRIV -DCONFIG_WEXT_SPY

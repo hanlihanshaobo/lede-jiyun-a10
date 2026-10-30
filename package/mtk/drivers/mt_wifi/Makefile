@@ -268,7 +268,7 @@ TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 define KernelPackage/mt_wifi
   CATEGORY:=MTK Properties
   TITLE:=MTK wifi AP driver
-  DEPENDS:=+wifi-dats
+  DEPENDS:=+wifi-dats +kmod-cfg80211
   FILES:=$(PKG_BUILD_DIR)/mt_wifi_ap/mt_wifi.ko
   AUTOLOAD:=$(call AutoProbe,mt_wifi)
   SUBMENU:=Drivers

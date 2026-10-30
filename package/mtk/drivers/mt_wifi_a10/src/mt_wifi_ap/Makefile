@@ -3018,8 +3018,7 @@ ccflags-y += $(EXTRA_CFLAGS)
 # port has been validated.
 ccflags-y += -Wno-error=incompatible-pointer-types \
              -Wno-error=implicit-function-declaration \
-             -Wno-error=int-conversion \
-             -Wno-error=return-mismatch
+             -Wno-error=int-conversion
 
 # CONFIG_KTHREAD is an invisible kernel symbol and never reaches OpenWrt's
 # .config, so the vendor check above leaves KTHREAD_SUPPORT undefined and the

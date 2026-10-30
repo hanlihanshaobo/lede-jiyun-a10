@@ -294,6 +294,15 @@ jobs:
             sha256sum output/Image | tee output/kernel.sha256
           fi
 
+          # Vendor wifi module (vendor-wifi branch only).  Having the .ko as a
+          # separate artifact makes it possible to test the driver with insmod
+          # on the running system instead of flashing a whole rootfs.
+          KO=$(find "$ROOTDIR" -path '*/mt_wifi/mt_wifi_ap/mt_wifi.ko' | head -1)
+          if [ -n "$KO" ]; then
+            cp -v "$KO" output/mt_wifi.ko
+            sha256sum output/mt_wifi.ko
+          fi
+
           if [ "$WANT_EMMC" = 1 ]; then
             # produced by Build/jiyun-a10-emmc-img. image.mk names it
             #   openwrt-rockchip-armv8-jiyun_a10-<fs>-<image>

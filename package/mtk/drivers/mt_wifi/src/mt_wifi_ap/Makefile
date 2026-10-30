@@ -3011,3 +3011,12 @@ obj-m+=$(SRC_EMBEDDED_DIR)/plug_in/
 # forwarded explicitly.  Without this the module fails at the first
 # #include "rt_config.h".
 ccflags-y += $(EXTRA_CFLAGS)
+
+# GCC 14 promotes several legacy-C diagnostics (implicit declarations,
+# int<->pointer conversions, incompatible function pointer types) to hard
+# errors.  The vendor code predates that; keep them as warnings until the
+# port has been validated.
+ccflags-y += -Wno-error=incompatible-pointer-types \
+             -Wno-error=implicit-function-declaration \
+             -Wno-error=int-conversion \
+             -Wno-error=return-mismatch

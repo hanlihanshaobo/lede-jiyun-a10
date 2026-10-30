@@ -1516,6 +1516,9 @@ static int CFG80211_OpsStaDump(
  */
 static int CFG80211_OpsWiphyParamsSet(
 	IN struct wiphy						*pWiphy,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0))
+	IN int								radio_idx,
+#endif
 	IN UINT32							Changed)
 {
 	VOID *pAd;
@@ -2890,8 +2893,15 @@ VOID CFG80211_UpdateAssocRespExtraIe(
 static int CFG80211_OpsChangeBeacon(
 	struct wiphy *pWiphy,
 	struct net_device *netdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0))
+	struct cfg80211_ap_update *ap_update)
+{
+	/* cfg80211_ap_update embeds cfg80211_beacon_data as its first member */
+	struct cfg80211_beacon_data *info = &ap_update->beacon;
+#else
 	struct cfg80211_beacon_data *info)
 {
+#endif
 	VOID *pAd;
 	CMD_RTPRIV_IOCTL_80211_BEACON bcn;
 	UCHAR *beacon_head_buf = NULL;
@@ -2947,7 +2957,11 @@ static int CFG80211_OpsChangeBeacon(
 
 static int CFG80211_OpsStopAp(
 	struct wiphy *pWiphy,
-	struct net_device *netdev)
+	struct net_device *netdev
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0))
+	, unsigned int link_id
+#endif
+	)
 {
 	VOID *pAd;
 	INT apidx;

@@ -128,6 +128,12 @@ jobs:
       - name: Configure
         run: |
           set -eux
+          # The package scan is incremental and is keyed by a file list cached
+          # during "feeds install".  prepare.sh adds a whole new package tree
+          # (package/mtk) after that scan, so without dropping tmp/ the new
+          # kmod never enters .packagedeps and "make package/.../compile" dies
+          # with "No rule to make target".  tmp/ only holds generated metadata.
+          rm -rf lede/tmp
           cp configs/config.seed lede/.config
           cd lede
           make defconfig
@@ -142,6 +148,19 @@ jobs:
             || { echo "ERROR: device jiyun_a10 not selected - did prepare.sh fail to append the recipe?"; exit 1; }
           grep -q '^CONFIG_PACKAGE_kmod-dsa-rtl8365mb=y$' .config \
             || { echo "ERROR: kmod-dsa-rtl8365mb not selected - the image would have no switch driver"; exit 1; }
+
+          # Vendor wifi driver.  It is added by prepare.sh after the initial
+          # package scan, so a stale tmp/ used to leave it out of .packagedeps;
+          # the build then failed only after the 30-minute kernel compile with
+          # "No rule to make target package/mtk/drivers/mt_wifi/compile".
+          for sym in CONFIG_PACKAGE_kmod-mt_wifi CONFIG_PACKAGE_wifi-profile; do
+            grep -q "^${sym}=y$" .config || {
+              echo "ERROR: ${sym} not selected"
+              ls -la package/mtk/drivers/mt_wifi || true
+              cat logs/package/mtk/drivers/mt_wifi/dump.txt 2>/dev/null || true
+              exit 1
+            }
+          done
 
           # Branding/application packages come from DEVICE_PACKAGES. A typo in
           # that list is silently dropped by defconfig, so assert every symbol

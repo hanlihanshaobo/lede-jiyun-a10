@@ -91,11 +91,17 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$
 # the vendor package is actually present, so main stays WEXT-free.
 if [ -d "$ROOT/package/mtk/drivers/mt_wifi" ]; then
 	say "enable WEXT for the vendor mt_wifi driver"
+	# WIRELESS_EXT/WEXT_PRIV have no prompt upstream, so olddefconfig would
+	# drop the values written below.  Make them visible first.
+	KVER_WEXT="${KCFG##*config-}"
+	PATCHDIR="$LEDE/target/linux/rockchip/patches-$KVER_WEXT"
+	mkdir -p "$PATCHDIR"
+	install -m 0644 "$ROOT/files/0101-add-config-wireless_ext.patch" \
+		"$PATCHDIR/0101-add-config-wireless_ext.patch"
 	sed \
 		-e 's/^# CONFIG_WIRELESS_EXT is not set/CONFIG_WIRELESS_EXT=y/' \
 		-e 's/^# CONFIG_WEXT_CORE is not set/CONFIG_WEXT_CORE=y/' \
 		-e 's/^# CONFIG_WEXT_PRIV is not set/CONFIG_WEXT_PRIV=y/' \
-		-e 's/^# CONFIG_WEXT_SPY is not set/CONFIG_WEXT_SPY=y/' \
 		-e 's/^# CONFIG_WEXT_PROC is not set/CONFIG_WEXT_PROC=y/' \
 		"$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
 	grep -q '^CONFIG_WIRELESS_EXT=y$' "$KCFG" || {

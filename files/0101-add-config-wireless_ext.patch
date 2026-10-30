@@ -1,0 +1,31 @@
+From: OpenWrt vendor-wifi bring-up
+Subject: [PATCH] net: wireless: make the WEXT Kconfig symbols selectable
+
+The vendor mt_wifi driver registers net_device.wireless_handlers and serves
+its private ioctls (iwpriv) through WEXT.  LEDE's 6.12+ generic config sets
+the WEXT symbols to "not set", but WIRELESS_EXT/WEXT_PRIV are invisible
+Kconfig symbols, so a value written into target/linux/generic/config-6.x is
+dropped again by olddefconfig.  Give the two symbols a prompt so the config
+fragment sticks.  WEXT_SPY no longer exists in 6.18.
+
+Signed-off-by: Jiyun A10 vendor-wifi bring-up
+---
+--- a/net/wireless/Kconfig
++++ b/net/wireless/Kconfig
+@@ -1,6 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ config WIRELESS_EXT
+-	bool
++	bool "Wireless extensions"
+ 
+ config WEXT_CORE
+ 	def_bool y
+@@ -12,7 +12,7 @@
+ 	depends on WEXT_CORE
+ 
+ config WEXT_PRIV
+-	bool
++	bool "WEXT_PRIV"
+ 
+ config CFG80211
+ 	tristate "cfg80211 - wireless configuration API"

@@ -85,6 +85,25 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$
 }
 
 # ---------------------------------------------------------------------------
+# Rockchip boot-mode register (PMU GRF + 0x200) for rboot loader/maskrom.
+# The generic config leaves syscon-reboot-mode off; enable it built-in so
+# the rboot helper can request a loader/maskrom reboot at runtime.
+# ---------------------------------------------------------------------------
+for sym in CONFIG_REBOOT_MODE CONFIG_SYSCON_REBOOT_MODE; do
+	if grep -q "^# ${sym} is not set$" "$KCFG"; then
+		sed -e "s/^# ${sym} is not set$/${sym}=y/" "$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
+	elif grep -q "^${sym}=" "$KCFG"; then
+		sed -e "s/^${sym}=.*/${sym}=y/" "$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
+	else
+		echo "${sym}=y" >> "$KCFG"
+	fi
+done
+grep -q '^CONFIG_SYSCON_REBOOT_MODE=y$' "$KCFG" || {
+	echo "ERROR: could not enable CONFIG_SYSCON_REBOOT_MODE in $KCFG" >&2
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
 # 5. drop generic patches that cannot apply here
 #
 # A generic patch that stops applying takes the whole build down inside
@@ -238,6 +257,10 @@ say "add PassWall2 feed"
 say "install luci-app-emmc-health"
 rm -rf "$LEDE/package/luci-app-emmc-health"
 cp -a "$ROOT/package/luci-app-emmc-health" "$LEDE/package/"
+
+say "install rboot (Rockchip loader/maskrom reboot helper)"
+rm -rf "$LEDE/package/rboot"
+cp -a "$ROOT/package/rboot" "$LEDE/package/"
 
 say "add PassWall2 geo-data feed"
 (

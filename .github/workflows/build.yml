@@ -264,6 +264,13 @@ jobs:
             sha256sum output/Image | tee output/kernel.sha256
           fi
 
+          # rboot helper: lets the running system request loader/maskrom.
+          RB=$(find lede/build_dir/target-*/rboot -maxdepth 1 -name rboot -type f | head -1)
+          if [ -n "$RB" ]; then
+            cp -v "$RB" output/rboot
+            sha256sum output/rboot
+          fi
+
           if [ "$WANT_EMMC" = 1 ]; then
             # produced by Build/jiyun-a10-emmc-img. image.mk names it
             #   openwrt-rockchip-armv8-jiyun_a10-<fs>-<image>

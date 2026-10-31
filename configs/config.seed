@@ -101,6 +101,12 @@ CONFIG_MTK_DOT11W_PMF_SUPPORT=y
 CONFIG_MTK_TXBF_SUPPORT=y
 CONFIG_MTK_IGMP_SNOOP_SUPPORT=y
 CONFIG_MTK_RTMP_FLASH_SUPPORT=y
+# These default to y in config.in, but the pre-calibration image macros
+# (PRE_CAL_SIZE_ONE_CARD, DCOC_IMAGE_SIZE, DPDPART*) are not present in the
+# vendored source.  The G68 reference disables all three as well.
+# CONFIG_MTK_PRE_CAL_TRX_SET1_SUPPORT is not set
+# CONFIG_MTK_RLM_CAL_CACHE_SUPPORT is not set
+# CONFIG_MTK_PRE_CAL_TRX_SET2_SUPPORT is not set
 CONFIG_MTK_CAL_BIN_FILE_SUPPORT=y
 CONFIG_MTK_ATE_SUPPORT=y
 CONFIG_MTK_WLAN_SERVICE=y

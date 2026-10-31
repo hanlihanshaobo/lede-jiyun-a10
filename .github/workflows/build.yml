@@ -412,6 +412,19 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # Explicit save: the automatic post-job cache step is skipped when the
+      # fail-fast compile fails, which is exactly the run that produces the
+      # cache we want to reuse.
+      - name: Save toolchain and kernel cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            lede/staging_dir
+            lede/build_dir/target-*/linux-rockchip_armv8
+          key: lede-kernel-${{ env.LEDE_REF }}-${{ hashFiles('configs/config.seed', 'scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
+
   # -------------------------------------------------------------------------
   # Job 2a: eMMC package - MBR + root.ext4, written with `wl 0` in loader mode.
   # Runs on every push/schedule; skipped when only the SPI package is wanted.

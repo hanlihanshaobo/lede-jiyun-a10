@@ -146,6 +146,12 @@ end
 m = Map("multiwifi", translate("多 SSID 分流"),
 	translate("每个 SSID 使用独立子网，并通过 PassWall2 的访问控制指定线路。"))
 m.redirect = dispatcher.build_url("admin", "network", "multiwifi")
+-- This firmware ships luci-mod-admin-full without the generic
+-- /admin/uci/apply endpoint, so the JS-side "apply" XHR would 404 and the
+-- multiwifi staging file would never be committed.  Commit here instead:
+-- apply_on_parse=false makes CBI commit the config and run on_after_commit
+-- synchronously for "Save & Apply".
+m.apply_on_parse = false
 
 -- ---------------------------------------------------------------------------
 -- Global

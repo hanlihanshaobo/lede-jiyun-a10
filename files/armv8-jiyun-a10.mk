@@ -6,15 +6,7 @@ define Device/jiyun_a10
   DEVICE_DTS := rk3568-jiyun-a10
   SUPPORTED_DEVICES += jiyun,a10
   UBOOT_DEVICE_NAME := generic-rk3568
-  DEVICE_PACKAGES := kmod-dsa-rtl8365mb kmod-mt_wifi wifi-profile luci-app-mtk datconf \
-	kmod-usb-net kmod-usb-storage \
-	luci-theme-design luci-theme-argon \
-	luci-app-openclash luci-app-zerotier \
-	luci-app-passwall2 \
-	luci-app-emmc-health mmc-utils \
-	luci-app-qmodem-next \
-	luci-app-diskman \
-	resize2fs
+  DEVICE_PACKAGES := kmod-dsa-rtl8365mb kmod-mt_wifi wifi-profile luci-app-mtk datconf resize2fs
   #
   # Only one image is produced here: the eMMC flashing package (MBR + root.ext4).
   # The SPI NOR package needs the stock loader/u-boot plus the FIT built from the

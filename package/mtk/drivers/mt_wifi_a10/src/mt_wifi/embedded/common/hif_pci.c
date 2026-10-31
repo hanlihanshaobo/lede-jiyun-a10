@@ -4950,7 +4950,13 @@ static VOID pci_reset_txrx_ring_mem(void *hdev_ctrl)
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 3, 0)
 		if (rx_ring->buf_type == DYNAMIC_PAGE_ALLOC) {
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+			/* page_frag_cache switched to encoded_page in 6.13;
+			 * .va/.pagecnt_bias no longer exist.
+			 */
+			page_frag_cache_drain(&rx_ring->rx_page);
+			NdisZeroMemory(&rx_ring->rx_page, sizeof(rx_ring->rx_page));
+#else
 			if (rx_ring->rx_page.va) {
 				struct page *page;
 
@@ -4958,6 +4964,7 @@ static VOID pci_reset_txrx_ring_mem(void *hdev_ctrl)
 				rx_page_frag_cache_drain(page, rx_ring->rx_page.pagecnt_bias);
 				NdisZeroMemory(&rx_ring->rx_page, sizeof(rx_ring->rx_page));
 			}
+#endif
 		}
 #endif
 

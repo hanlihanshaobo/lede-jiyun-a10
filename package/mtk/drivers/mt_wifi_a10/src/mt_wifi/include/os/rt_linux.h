@@ -30,6 +30,9 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+#include <linux/page_frag_cache.h>
+#endif
 #include <linux/rtnetlink.h>
 #include <linux/ethtool.h>
 #include <linux/wireless.h>

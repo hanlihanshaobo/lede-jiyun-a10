@@ -125,23 +125,6 @@ jobs:
       - name: Inject Jiyun A10 device support
         run: ./scripts/prepare.sh lede
 
-      # Kernel/toolchain cache for the vendor-wifi bring-up loop.  The key
-      # deliberately ignores package/mtk (driver source) so driver-only fixes
-      # reuse the ~40 minute kernel build; it includes the kernel config,
-      # prepare.sh and the WEXT/DTS inputs.  The driver build dir lives outside
-      # linux-rockchip_armv8 and is still rebuilt every run.
-      - name: Cache toolchain and kernel build
-        uses: actions/cache@v4
-        with:
-          path: |
-            lede/staging_dir
-            lede/build_dir/host
-            lede/build_dir/toolchain-*
-            lede/build_dir/target-*/linux-rockchip_armv8
-          key: lede-kernel-v2-${{ env.LEDE_REF }}-${{ hashFiles('scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
-          restore-keys: |
-            lede-kernel-v2-${{ env.LEDE_REF }}-
-
       - name: Configure
         run: |
           set -eux
@@ -423,21 +406,6 @@ jobs:
           path: output
           retention-days: 30
           if-no-files-found: error
-
-      # Explicit save: the automatic post-job cache step is skipped when the
-      # fail-fast compile fails, which is exactly the run that produces the
-      # cache we want to reuse.
-      - name: Save toolchain and kernel cache
-        if: always()
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            lede/staging_dir
-            lede/build_dir/host
-            lede/build_dir/toolchain-*
-            lede/build_dir/target-*/linux-rockchip_armv8
-          key: lede-kernel-v2-${{ env.LEDE_REF }}-${{ hashFiles('scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
 
   # -------------------------------------------------------------------------
   # Job 2a: eMMC package - MBR + root.ext4, written with `wl 0` in loader mode.

@@ -271,6 +271,14 @@ say "add PassWall2 geo-data feed"
 	fi
 	./scripts/feeds update passwall_packages
 	./scripts/feeds install -p passwall_packages v2ray-geodata
+	# Lean's net/xray-core currently pins 26.10.29, whose upstream
+	# codeload tag does not exist (and whose mirror entry is missing),
+	# so the build dies at the download step.  Use the passwall feed's
+	# xray-core (26.10.31) instead: it is the core luci-app-passwall2 is
+	# developed against and its codeload tarball/hash are valid.
+	rm -rf "$LEDE/package/feeds/packages/xray-core"
+	rm -rf "$LEDE/package/feeds/passwall_packages/xray-core"
+	./scripts/feeds install -p passwall_packages xray-core
 )
 
 # ---------------------------------------------------------------------------

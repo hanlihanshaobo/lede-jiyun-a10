@@ -133,21 +133,31 @@ jobs:
       - name: Prefetch xray-core source
         run: |
           set -eux
-          MK=lede/feeds/passwall_packages/xray-core/Makefile
-          if [ -f "$MK" ]; then
-            VER=$(sed -n 's/^PKG_VERSION:=//p' "$MK" | head -1)
-            URL="https://codeload.github.com/XTLS/Xray-core/tar.gz/v${VER}"
-            mkdir -p lede/dl
-            for i in 1 2 3 4 5; do
-              if curl -fL --retry 3 --connect-timeout 30 --max-time 300 \
-                   -o "lede/dl/xray-core-${VER}.tar.gz" "$URL"; then
-                break
-              fi
-              sleep 15
-            done
-            test -s "lede/dl/xray-core-${VER}.tar.gz"
-            sha256sum "lede/dl/xray-core-${VER}.tar.gz"
+          # prepare.sh replaces Lean's broken 26.10.29 xray-core with the
+          # passwall feed's valid 26.10.31 package.  Fetch that exact
+          # codeload tarball and verify its PKG_HASH before the long build.
+          MK=lede/package/feeds/passwall_packages/xray-core/Makefile
+          if [ ! -f "$MK" ]; then
+            echo "ERROR: passwall xray-core not installed - check prepare.sh" >&2
+            exit 1
           fi
+          VER=$(sed -n 's/^PKG_VERSION:=//p' "$MK" | head -1)
+          HASH=$(sed -n 's/^PKG_HASH:=//p' "$MK" | head -1)
+          [ -n "$VER" ] && [ -n "$HASH" ]
+          FILE="lede/dl/xray-core-${VER}.tar.gz"
+          mkdir -p lede/dl
+          if [ -s "$FILE" ] && echo "${HASH}  ${FILE}" | sha256sum -c -; then
+            exit 0
+          fi
+          URL="https://codeload.github.com/XTLS/Xray-core/tar.gz/v${VER}"
+          for i in 1 2 3 4 5; do
+            if curl -fL --retry 3 --connect-timeout 30 --max-time 300 \
+                 -o "$FILE" "$URL"; then
+              break
+            fi
+            sleep 15
+          done
+          echo "${HASH}  ${FILE}" | sha256sum -c -
 
       - name: Configure
         run: |

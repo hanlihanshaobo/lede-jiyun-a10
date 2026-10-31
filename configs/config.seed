@@ -21,6 +21,9 @@ CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
 # management/UI work here.
 CONFIG_PACKAGE_qmodem_INCLUDE_generic-qmi-wwan=y
 # CONFIG_PACKAGE_qmodem_INCLUDE_vendor-qmi-wwan is not set
+# QModem's bundled ndisc6 1.0.2 fails to build on this toolchain and is not
+# needed for the WiFi/modem bring-up; disable it.
+# CONFIG_PACKAGE_qmodem_INCLUDE_ndisc6 is not set
 
 # Multi-SSID routing: build both cores so VMess/Trojan/SS and
 # Hysteria2/TUIC nodes from the same subscription all work.

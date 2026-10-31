@@ -138,7 +138,7 @@ jobs:
             lede/build_dir/host
             lede/build_dir/toolchain-*
             lede/build_dir/target-*/linux-rockchip_armv8
-          key: lede-kernel-v2-${{ env.LEDE_REF }}-${{ hashFiles('configs/config.seed', 'scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
+          key: lede-kernel-v2-${{ env.LEDE_REF }}-${{ hashFiles('scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
           restore-keys: |
             lede-kernel-v2-${{ env.LEDE_REF }}-
 
@@ -437,7 +437,7 @@ jobs:
             lede/build_dir/host
             lede/build_dir/toolchain-*
             lede/build_dir/target-*/linux-rockchip_armv8
-          key: lede-kernel-v2-${{ env.LEDE_REF }}-${{ hashFiles('configs/config.seed', 'scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
+          key: lede-kernel-v2-${{ env.LEDE_REF }}-${{ hashFiles('scripts/prepare.sh', 'files/0101-add-config-wireless_ext.patch', 'files/rk3568-jiyun-a10.dts', 'files/armv8-jiyun-a10.mk') }}
 
   # -------------------------------------------------------------------------
   # Job 2a: eMMC package - MBR + root.ext4, written with `wl 0` in loader mode.

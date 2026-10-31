@@ -125,6 +125,30 @@ jobs:
       - name: Inject Jiyun A10 device support
         run: ./scripts/prepare.sh lede
 
+      # The passwall feed pins xray-core to a fresh GitHub tag.  Its fallback
+      # mirror (mirror2.openwrt.org) usually does not have the new tarball yet,
+      # and a mirror timeout used to kill the build after the full kernel and
+      # rootfs compile (#99).  Fetch the codeload tarball up front with retries
+      # so make download/compile finds it in dl/ and never hits the mirror.
+      - name: Prefetch xray-core source
+        run: |
+          set -eux
+          MK=lede/feeds/passwall_packages/xray-core/Makefile
+          if [ -f "$MK" ]; then
+            VER=$(sed -n 's/^PKG_VERSION:=//p' "$MK" | head -1)
+            URL="https://codeload.github.com/XTLS/Xray-core/tar.gz/v${VER}"
+            mkdir -p lede/dl
+            for i in 1 2 3 4 5; do
+              if curl -fL --retry 3 --connect-timeout 30 --max-time 300 \
+                   -o "lede/dl/xray-core-${VER}.tar.gz" "$URL"; then
+                break
+              fi
+              sleep 15
+            done
+            test -s "lede/dl/xray-core-${VER}.tar.gz"
+            sha256sum "lede/dl/xray-core-${VER}.tar.gz"
+          fi
+
       - name: Configure
         run: |
           set -eux

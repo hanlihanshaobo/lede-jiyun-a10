@@ -195,6 +195,20 @@ say "install MTK wifi driver package"
 mkdir -p "$LEDE/package"
 cp -a "$ROOT/package/mtk" "$LEDE/package/"
 
+# base-files ships the generic /sbin/wifi (a shell script that sources
+# /lib/wifi/*.sh).  wifi-profile installs the vendor replacement wifi_jedi at
+# the same path, and opkg refuses to install two packages owning one file:
+#   check_data_file_clashes: Package wifi-profile wants to install file
+#   /sbin/wifi, but that file is already provided by package base-files
+# which is what killed package/install in #99/#100.  The MTK stack replaces
+# the whole wifi bring-up path (LuCI calls "wifi restart", which only
+# wifi_jedi implements), so drop the generic script instead of the vendor one.
+rm -f "$LEDE/package/base-files/files/sbin/wifi"
+[ ! -e "$LEDE/package/base-files/files/sbin/wifi" ] || {
+	echo "ERROR: generic base-files /sbin/wifi still present - wifi-profile will clash" >&2
+	exit 1
+}
+
 # ---------------------------------------------------------------------------
 # 6. rootfs overlay (target base-files)
 # ---------------------------------------------------------------------------

@@ -182,6 +182,21 @@ jobs:
           # required.  No OpenClash/PassWall2/QModem/ZeroTier/theme plugins.
           grep -q '^CONFIG_PACKAGE_resize2fs=y$' .config \
             || { echo "ERROR: resize2fs not selected"; exit 1; }
+
+          # Lean's DEVICE_TYPE=router profile defaults force-select a dozen
+          # optional apps even when the seed never mentions them.  The seed
+          # pins them off; fail here (minutes in) if defconfig ignored that,
+          # instead of compiling them for two hours.
+          for sym in luci-app-ssr-plus luci-app-vsftpd luci-app-filetransfer \
+                     luci-app-ddns luci-app-upnp luci-app-wol luci-app-vlmcsd \
+                     luci-app-arpbind luci-app-autoreboot luci-app-nlbwmon \
+                     luci-app-turboacc luci-app-accesscontrol \
+                     ddns-scripts_aliyun ddns-scripts_dnspod; do
+            if grep -q "^CONFIG_PACKAGE_${sym}=y$" .config; then
+              echo "ERROR: optional package ${sym} still selected by the profile defaults"
+              exit 1
+            fi
+          done
           echo "jiyun_a10 + switch + vendor wifi packages OK"
 
       # Apply the kernel patch series on its own, before the 40+ minute build.

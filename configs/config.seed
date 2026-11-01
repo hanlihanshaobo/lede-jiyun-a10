@@ -20,6 +20,27 @@ CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
 # no OpenClash/PassWall2/QModem/ZeroTier/themes/extra plugins.
 CONFIG_PACKAGE_resize2fs=y
 
+# Lean's include/target.mk defines DEVICE_TYPE=router, whose profile package
+# list force-selects a dozen optional apps even when this seed never mentions
+# them (ssr-plus, vsftpd, ddns, upnp, wol, vlmcsd, ...).  A profile package is
+# only a Kconfig default; an explicit "is not set" wins in make defconfig.
+# They are not needed to bring the vendor WiFi stack up and only add build
+# time / image size, so pin them off for the verification image.
+# CONFIG_PACKAGE_luci-app-ssr-plus is not set
+# CONFIG_PACKAGE_luci-app-vsftpd is not set
+# CONFIG_PACKAGE_luci-app-filetransfer is not set
+# CONFIG_PACKAGE_luci-app-ddns is not set
+# CONFIG_PACKAGE_luci-app-upnp is not set
+# CONFIG_PACKAGE_luci-app-wol is not set
+# CONFIG_PACKAGE_luci-app-vlmcsd is not set
+# CONFIG_PACKAGE_luci-app-arpbind is not set
+# CONFIG_PACKAGE_luci-app-autoreboot is not set
+# CONFIG_PACKAGE_luci-app-nlbwmon is not set
+# CONFIG_PACKAGE_luci-app-turboacc is not set
+# CONFIG_PACKAGE_luci-app-accesscontrol is not set
+# CONFIG_PACKAGE_ddns-scripts_aliyun is not set
+# CONFIG_PACKAGE_ddns-scripts_dnspod is not set
+
 # MTK vendor wifi driver (package/mtk/drivers/mt_wifi_a10)
 CONFIG_MTK_SUPPORT_OPENWRT=y
 CONFIG_MTK_WIFI_DRIVER=y

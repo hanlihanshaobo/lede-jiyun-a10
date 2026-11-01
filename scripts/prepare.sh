@@ -236,6 +236,9 @@ install -m 0644 "$ROOT/files/www/luci-static/resources/view/status/include/15_po
 # kmodloader loads the module (S10boot), so jiyun-wifi-dat has to run at S09.
 # The legacy UCI helper (mt76 world) is kept installed but is no longer called
 # from rc.local; the vendor stack has no /etc/config/wireless.
+# NOTE: the target base-files tree has no etc/init.d yet, install(1) does not
+# create it, and prepare_rootfs later enables every rc.common script it finds.
+mkdir -p "$BASE/etc/init.d"
 install -m 0755 "$ROOT/files/etc/jiyun-wifi-dat" "$BASE/etc/init.d/jiyun-wifi-dat"
 install -m 0755 "$ROOT/files/etc/jiyun-mac.sh" "$BASE/etc/jiyun-mac.sh"
 install -m 0644 "$ROOT/files/etc/jiyun-factory-mac.sh" "$BASE/etc/jiyun-factory-mac.sh"

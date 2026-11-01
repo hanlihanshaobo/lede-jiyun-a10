@@ -164,6 +164,9 @@ jobs:
             cat logs/package/mtk/drivers/mt_wifi_a10/dump.txt
           fi
           for sym in CONFIG_PACKAGE_kmod-mt_wifi CONFIG_PACKAGE_wifi-dats \
+                     CONFIG_PACKAGE_wifi-profile CONFIG_PACKAGE_datconf \
+                     CONFIG_PACKAGE_luci-app-mtk CONFIG_PACKAGE_luci-compat \
+                     CONFIG_PACKAGE_luci-lua-runtime CONFIG_PACKAGE_hostapd-common \
                      CONFIG_PACKAGE_wireless-tools; do
             grep -q "^${sym}=y$" .config || {
               echo "ERROR: ${sym} not selected"

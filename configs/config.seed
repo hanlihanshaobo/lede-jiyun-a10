@@ -27,6 +27,15 @@ CONFIG_MTK_WIFI_DRIVER=y
 # kmod-mt_wifi from .config even though DEVICE_PACKAGES listed it.
 CONFIG_PACKAGE_kmod-mt_wifi=y
 CONFIG_PACKAGE_wifi-dats=y
+CONFIG_PACKAGE_wifi-profile=y
+CONFIG_PACKAGE_datconf=y
+CONFIG_PACKAGE_datconf-lua=y
+CONFIG_PACKAGE_luci-app-mtk=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lua-runtime=y
+CONFIG_PACKAGE_hostapd-common=y
+# wifi-profile provides its own /sbin/wifi
+# CONFIG_PACKAGE_wifi-scripts is not set
 CONFIG_PACKAGE_wireless-tools=y
 CONFIG_MTK_FIRST_IF_MT7916=y
 CONFIG_MTK_SECOND_IF_NONE=y

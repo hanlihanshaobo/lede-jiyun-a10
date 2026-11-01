@@ -68,10 +68,11 @@ patch_band() {
 		;;
 	esac
 
-	# the vendor default SSIDs are e-Link / e-Link_WiFi6
+	# the vendor default SSIDs are G68-2.4G / G68-5G (and e-Link* in the
+	# stock WayOS config); leave anything else alone
 	cur="$(get_key "$file" SSID1)"
 	case "$cur" in
-	e-Link*|"")
+	G68-*|e-Link*|"")
 		set_key "$file" SSID1 "$ssid"
 		;;
 	esac

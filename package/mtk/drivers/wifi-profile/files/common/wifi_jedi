@@ -5,6 +5,43 @@
 
 package.path = '/lib/wifi/?.lua;'..package.path
 
+-- OpenWrt's lua does not ship string.split; LuCI adds it in luci.util.  This
+-- script is also executed by /etc/init.d and rc.local, i.e. outside the LuCI
+-- dispatcher, where every string.split() below would be a nil call.  Provide
+-- the same helper (plain separator unless the regex flag is given) locally.
+if not string.split then
+	function string.split(str, pat, max, regex)
+		pat = pat or "\n"
+		max = max or #str
+
+		local t = {}
+		local c = 1
+
+		if #str == 0 then
+			return {""}
+		end
+		if #pat == 0 then
+			return nil
+		end
+		if max == 0 then
+			return str
+		end
+
+		repeat
+			local s, e = str:find(pat, c, not regex)
+			max = max - 1
+			if s and max < 0 then
+				t[#t+1] = str:sub(c)
+			else
+				t[#t+1] = str:sub(c, s and s - 1)
+			end
+			c = e and e + 1 or #str + 1
+		until not s or max < 0
+
+		return t
+	end
+end
+
 local mtkwifi = require("mtkwifi")
 local nixio = require("nixio")
 

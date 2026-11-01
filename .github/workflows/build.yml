@@ -323,6 +323,16 @@ jobs:
           done
           exit 1
 
+      - name: Diagnose package install
+        if: failure()
+        run: |
+          cd lede
+          echo "== disk =="
+          df -h / || true
+          du -sh build_dir staging_dir 2>/dev/null || true
+          echo "== package/install V=s =="
+          make package/install V=s 2>&1 | tail -200
+
       - name: Collect build output
         run: |
           set -eux

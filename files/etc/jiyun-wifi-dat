@@ -21,12 +21,16 @@
 
 START=09
 
-. /etc/jiyun-factory-mac.sh
-
 DATADIR=/etc/wireless/mediatek
 
 start() {
 	local w24 w5 suffix24 suffix5
+
+	# Sourced here, not at the top level: /etc/rc.common sources this file
+	# when "enable" runs during the image build, where the helper only exists
+	# inside the target rootfs, and a failing "." would abort enable and leave
+	# the S09 symlink uncreated.
+	. /etc/jiyun-factory-mac.sh
 
 	[ -d "$DATADIR" ] || return 0
 

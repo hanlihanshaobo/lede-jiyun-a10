@@ -43,6 +43,13 @@ env:
   # latest release; switch the fallback to 'emmc' once the SPI package is
   # validated, since only the rootfs gets iterated on afterwards.
   PACKAGES: ${{ github.event.inputs.packages || 'both' }}
+  # A single stalled git clone can otherwise eat the whole download step:
+  # run #104 hung 58 minutes on toolchain/fortify-headers until the step
+  # timeout fired.  Make git abort transfers that stop making progress so the
+  # serial retry below can pick up from dl/ instead.
+  GIT_TERMINAL_PROMPT: "0"
+  GIT_HTTP_LOW_SPEED_LIMIT: "1000"
+  GIT_HTTP_LOW_SPEED_TIME: "60"
 
 jobs:
   # -------------------------------------------------------------------------
@@ -227,7 +234,11 @@ jobs:
         timeout-minutes: 60
         run: |
           cd lede
-          make download -j"$(nproc)" || make download -j1 V=s
+          # Cap the parallel pass: if one clone stalls, the serial retry still
+          # gets to run within the step timeout (already fetched files stay in
+          # dl/).  Run #104 lost the full 60 min to one hung fortify-headers
+          # clone and never reached the retry.
+          timeout 1500 make download -j"$(nproc)" || timeout 2400 make download -j1 V=s
 
       # Build the vendor wifi module before the rootfs so a compile error
       # fails in ~40 minutes instead of after the full image build.  Only

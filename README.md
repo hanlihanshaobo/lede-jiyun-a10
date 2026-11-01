@@ -15,8 +15,9 @@ scripts/prepare.sh              layer everything below onto a cloned LEDE tree
 files/rk3568-jiyun-a10.dts      Device tree (DSA switch + PCIe + gmac)
 files/armv8-jiyun-a10.mk        Device/image recipe (DEVICE_PACKAGES, IMAGE/emmc.img)
 files/99-jiyun-net              uci-defaults: br-lan over lan1/2/3, wan, CID-derived MACs
-files/etc/jiyun-mac.sh          per-unit WLAN MACs, runs from rc.local
-files/etc/rc.local              invokes jiyun-mac.sh at the end of boot
+files/etc/jiyun-wifi-dat      S09 init: factory WLAN MACs into the mt_wifi dat profiles
+files/etc/jiyun-mac.sh          legacy (mt76) per-unit WLAN MACs; installed but unused
+files/etc/rc.local              brings the vendor radios up at the end of boot
 files/mt7916_eeprom.bin         MT7916 calibration (ART/Factory copy: 2.4G+5G)
 files/stock_fit_header.bin      stock FIT header template for mkfit.py
 files/stock_loader.bin          stock loader partition (GPT header + idbloader)

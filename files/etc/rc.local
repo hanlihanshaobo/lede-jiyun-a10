@@ -7,7 +7,17 @@ for h in /sys/bus/usb/devices/usb*/power/control; do
 	[ -w "$h" ] && echo on > "$h"
 done
 
-# Per-unit WLAN MACs (must run after the first-boot "wifi config").
-sh /etc/jiyun-mac.sh 2>/dev/null
+# Vendor mt_wifi stack: /etc/init.d/jiyun-wifi-dat (S09) already wrote the
+# factory BSSIDs into the dat profiles, so the module loaded by S10boot has
+# the right MACs.  Nothing else brings the radios up, so do it once the
+# network (br-lan) is ready.
+if [ -d /sys/module/mt_wifi ] && [ -f /etc/wireless/l1profile.dat ] && [ -x /sbin/wifi ]; then
+	/sbin/wifi up
+	# wifi_jedi already bridges the main vifs; make sure L2 is right even if
+	# brctl is missing from the image.
+	for dev in ra0 rax0; do
+		[ -e "/sys/class/net/$dev" ] && ip link set "$dev" master br-lan 2>/dev/null
+	done
+fi
 
 exit 0

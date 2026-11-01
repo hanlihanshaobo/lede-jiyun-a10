@@ -232,9 +232,11 @@ mkdir -p "$LEDE/files/www/luci-static/resources/view/status/include"
 install -m 0644 "$ROOT/files/www/luci-static/resources/view/status/include/15_ports.js" \
 	"$LEDE/files/www/luci-static/resources/view/status/include/15_ports.js"
 
-# Per-unit WLAN MACs: the first-boot "wifi config" (S18fanctrl) rewrites
-# /etc/config/wireless, so uci-defaults is too early - rc.local runs at the
-# very end of boot and applies them.
+# Per-unit MACs for the vendor stack: mt_wifi parses its dat profile while
+# kmodloader loads the module (S10boot), so jiyun-wifi-dat has to run at S09.
+# The legacy UCI helper (mt76 world) is kept installed but is no longer called
+# from rc.local; the vendor stack has no /etc/config/wireless.
+install -m 0755 "$ROOT/files/etc/jiyun-wifi-dat" "$BASE/etc/init.d/jiyun-wifi-dat"
 install -m 0755 "$ROOT/files/etc/jiyun-mac.sh" "$BASE/etc/jiyun-mac.sh"
 install -m 0644 "$ROOT/files/etc/jiyun-factory-mac.sh" "$BASE/etc/jiyun-factory-mac.sh"
 install -m 0755 "$ROOT/files/etc/rc.local" "$BASE/etc/rc.local"

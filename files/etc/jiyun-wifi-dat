@@ -1,0 +1,78 @@
+#!/bin/sh /etc/rc.common
+# ---------------------------------------------------------------------------
+# Per-unit WLAN MACs for the vendor mt_wifi stack.
+#
+# The MT7916 has no MAC EEPROM and no programmed eFuse/OTP; the only per-unit
+# MACs live in the SPI NOR "Config_new" partition (mtd5), written by the stock
+# firmware:
+#
+#     mac_defwl      -> 2.4 GHz (vendor profile mt7916.dbdc.b0.dat)
+#     mac_defwl_5g   -> 5 GHz   (vendor profile mt7916.dbdc.b1.dat)
+#
+# mt_wifi parses its profile in RTMPSetProfileParameters() while the module
+# initialises, i.e. from /sbin/kmodloader inside /etc/init.d/boot (START=10).
+# This script therefore runs at START=09: by the time the module is loaded the
+# dat files already carry the factory BSSIDs instead of the 80:81:00:00:00:xx
+# placeholders that ship in wifi-dats.
+#
+# Only vendor-default values are replaced, so a MAC/SSID configured from the
+# LuCI MTK page survives a reboot.
+# ---------------------------------------------------------------------------
+
+START=09
+
+. /etc/jiyun-factory-mac.sh
+
+DATADIR=/etc/wireless/mediatek
+
+start() {
+	local w24 w5 suffix24 suffix5
+
+	[ -d "$DATADIR" ] || return 0
+
+	w24="$(jiyun_wayos_get mac_defwl)"
+	w5="$(jiyun_wayos_get mac_defwl_5g)"
+	[ -n "$w24" ] && [ -n "$w5" ] || {
+		logger -t jiyun-wifi-dat "no factory WLAN MACs in Config_new, keeping dat defaults"
+		return 0
+	}
+
+	suffix24="$(printf '%s' "$w24" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 6)"
+	suffix5="$(printf '%s' "$w5" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 6)"
+
+	patch_band "$DATADIR/mt7916.dbdc.b0.dat" "$w24" "Dwrt-${suffix24}-2.4G"
+	patch_band "$DATADIR/mt7916.dbdc.b1.dat" "$w5" "Dwrt-${suffix5}-5G"
+
+	logger -t jiyun-wifi-dat "WLAN profile MACs set: $w24 (2.4G), $w5 (5G)"
+}
+
+get_key() {
+	sed -n "s/^$2=//p" "$1" | head -1
+}
+
+set_key() {
+	sed -i "s/^$2=.*/$2=$3/" "$1"
+}
+
+patch_band() {
+	local file="$1" mac="$2" ssid="$3"
+	local cur
+
+	[ -f "$file" ] || return 0
+
+	# 80:81:00:00:00:80 / :90 are the placeholders shipped in wifi-dats
+	cur="$(get_key "$file" MacAddress)"
+	case "$cur" in
+	80:81:00:00:00:*|"")
+		set_key "$file" MacAddress "$mac"
+		;;
+	esac
+
+	# the vendor default SSIDs are e-Link / e-Link_WiFi6
+	cur="$(get_key "$file" SSID1)"
+	case "$cur" in
+	e-Link*|"")
+		set_key "$file" SSID1 "$ssid"
+		;;
+	esac
+}

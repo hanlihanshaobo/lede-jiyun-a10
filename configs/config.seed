@@ -21,6 +21,10 @@ CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
 # management/UI work here.
 CONFIG_PACKAGE_qmodem_INCLUDE_generic-qmi-wwan=y
 # CONFIG_PACKAGE_qmodem_INCLUDE_vendor-qmi-wwan is not set
+# ndisc6 1.0.2's upstream (remlab.net) is gone and the OpenWrt mirror is
+# unreachable from the runner; qmodem's IPv6 ND tool is optional. Use the
+# no-ndisc/no-rdisc6 choice so the package is not selected at all.
+CONFIG_PACKAGE_qmodem_INCLUDE_no_ndisc_rdisc6=y
 
 # Multi-SSID routing: build both cores so VMess/Trojan/SS and
 # Hysteria2/TUIC nodes from the same subscription all work.

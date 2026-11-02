@@ -24,6 +24,7 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - ".github/workflows/**"
   schedule:
     - cron: "0 18 * * 5"
 
@@ -487,18 +488,25 @@ jobs:
 
           | File | Size | Write to | Command |
           |------|------|----------|---------|
-          | \`jiyun-a10-spi.img\`  | ${SPI_SIZE}  | SPI NOR | \`wl 0\` (works in maskrom) |
-          | \`jiyun-a10-emmc.img\` | ${EMMC_SIZE} | eMMC    | \`wl 0\` (loader mode only) |
+          | \`jiyun-a10-spi.img\`  | ${SPI_SIZE}  | SPI NOR | \`wl 0\` (full loader) |
+          | \`jiyun-a10-emmc.img\` | ${EMMC_SIZE} | eMMC    | \`wl 0\` (full loader) |
+
+          **Hold RESET while powering on to enter loader/maskrom. rboot has been removed.**
 
           \`\`\`sh
           RKD=./tools/rkdeveloptool
-          \$RKD ld && \$RKD cs 9 && \$RKD wl 0 jiyun-a10-spi.img    # maskrom: boot chain
-          # power-cycle, hold RESET -> loader mode
-          \$RKD ld && \$RKD cs 1 && \$RKD wl 0 jiyun-a10-emmc.img   # loader: rootfs
+          \$RKD ld
+          \$RKD db artifacts/a10-loader-full.bin   # full loader: SPI + eMMC
+          \$RKD cs 1 && \$RKD wl 0 jiyun-a10-emmc.img
+          \$RKD cs 9 && \$RKD wl 0 jiyun-a10-spi.img
+          \$RKD rd
           \`\`\`
 
+          - eMMC image is ~513 MiB; expand the 7 GB p1 offline with \`scripts/expand_emmc_offline.sh\`.
+          - The single USB port is the OTG/flashing port (device mode only, no VBUS host); U-disks are not supported (same on stock).
+          - **Always load the full loader with \`db\` before writing SPI.** The U-Boot loader mode does not support \`cs 9\`; a \`wl\` after the failed switch goes to eMMC.
           - kernel sha256: \`${KERNEL_SHA}\`
-          - built from: ${GITHUB_SHA} (${PACKAGES})
+          - built from: ${GITHUB_REF_NAME} / ${GITHUB_SHA} (${PACKAGES})
           - run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           **The SPI package carries the kernel.** Rebuild it (\`packages: both\`)

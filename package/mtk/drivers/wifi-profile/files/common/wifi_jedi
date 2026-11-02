@@ -253,6 +253,12 @@ or cmd == "reset" then
 elseif cmd == "reload_legacy" then
 	nixio.syslog("info", "legacy command "..cmd)
 	wifi("reload", dev)
+elseif cmd == "config" then
+	-- The vendor stack keeps its configuration in /etc/wireless/mediatek,
+	-- not /etc/config/wireless.  S18fanctrl calls "wifi config" on every
+	-- boot when that file is missing, so succeed silently instead of
+	-- printing the usage text to the console.
+	os.exit(0)
 else
 	usage()
 end

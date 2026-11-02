@@ -124,6 +124,56 @@ function mtwifi_iwpriv_hook(devname)
     end
 end
 
+-- The driver parses its profile while the module initialises, when the
+-- per-band channel list is not built yet.  For 2.4G the configured Channel
+-- (e.g. 6) is rejected at that point, the AP then comes up on channel 0 and
+-- the boot-time ACS has no valid channel to select either (iwconfig shows
+-- "Channel:0", Tx-Power 0 dBm).  Re-apply the profile channel once the netdev
+-- is up - the private ioctl is refused while the interface is down.
+--
+-- Also, the driver's band <-> profile order does not necessarily match the
+-- order of main_ifname/profile_path in l1profile.dat: on the A10 ra0 comes up
+-- as 5G using b1.dat while the l1profile lists ra0 and b0 first.  Pick the
+-- profile by the MAC the interface actually got instead of trusting the
+-- list order.
+function mtwifi_apply_channel(dev)
+    local mtkwifi = require("mtkwifi")
+    local ifname = dev.main_ifname
+    local mac = mtkwifi.__trim(mtkwifi.read_pipe("cat /sys/class/net/"..ifname.."/address"))
+    if not mac or mac == "" then
+        return
+    end
+    mac = mac:lower()
+
+    -- Only when the driver actually dropped the channel (it then reports
+    -- Channel:0 / Frequency:0).  Re-setting the channel an interface is
+    -- already on is rejected with EINVAL and would only add console noise.
+    local iw = mtkwifi.read_pipe("iwconfig "..ifname.." 2>/dev/null")
+    if not (iw:find("Channel:0") or iw:find("Frequency:0")) then
+        return
+    end
+
+    -- Only the per-band profiles declared in l1profile.dat; the driver also
+    -- writes a merged "DBDC_card0.dat" there whose Channel is "149;6", which
+    -- must not be fed back to iwpriv.
+    local devs = mtkwifi.__get_l1dat()
+    local seen = {}
+    for _, d in pairs(devs.devname_ridx) do
+        local path = d.profile_path
+        if path and not seen[path] then
+            seen[path] = true
+            local cfgs = mtkwifi.load_profile(path)
+            if cfgs and cfgs.MacAddress and cfgs.MacAddress:lower() == mac then
+                local ch = cfgs.Channel
+                if ch and ch ~= "" and ch ~= "0" then
+                    __exec_iwpriv_cmd(ifname, "Channel", ch)
+                end
+                return
+            end
+        end
+    end
+end
+
 function mtwifi_up(devname)
     local nixio = require("nixio")
     local mtkwifi = require("mtkwifi")
@@ -171,6 +221,7 @@ function mtwifi_up(devname)
                 end
             end
             add_vif_into_lan(dev.main_ifname)
+            mtwifi_apply_channel(dev)
         else
             -- for non-dbdc mode,
             -- we have to bring up main_ifname first, main_ifname will create all other vifs.
@@ -182,6 +233,7 @@ function mtwifi_up(devname)
                 nixio.syslog("info", "mtwifi_up: ifconfig "..dev.main_ifname.." up")
                 os.execute("ifconfig "..dev.main_ifname.." up")
                 add_vif_into_lan(dev.main_ifname)
+                mtwifi_apply_channel(dev)
             else
                 nixio.syslog("err", "mtwifi_up: main_ifname "..dev.main_ifname.." missing, quit!")
                 return

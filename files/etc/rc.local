@@ -10,4 +10,12 @@ done
 # Per-unit WLAN MACs (must run after the first-boot "wifi config").
 sh /etc/jiyun-mac.sh 2>/dev/null
 
+# Re-apply the LED config now that wlan0/wlan1 exist, then make the middle
+# system LED solid: heartbeat is only the boot indicator.  Leave the LED alone
+# if the user picked a different trigger in LuCI.
+/etc/init.d/led restart >/dev/null 2>&1
+if [ "$(uci -q get system.led_sys.trigger)" = "heartbeat" ]; then
+	[ -e /sys/class/leds/sys/trigger ] && echo default-on > /sys/class/leds/sys/trigger
+fi
+
 exit 0

@@ -191,30 +191,30 @@
 		compatible = "gpio-leds";
 
 		/*
-		 * Stock u-boot turns on a "sysled" at power-on; it drives GPIO
-		 * 20, i.e. gpio0 RK_PC4, and the vendor kernel leaves it on
-		 * (the stock DTB has no node for it).  Keep it solid so the
-		 * power LED behaves like the stock firmware.
+		 * Middle power/status LED: the stock u-boot turns it on
+		 * (GPIO 20 = gpio0 RK_PC4).  OpenWrt keeps it on heartbeat
+		 * while booting and switches it to default-on at the end of
+		 * boot (see /etc/rc.local).
 		 */
 		sys {
 			label = "sys";
 			gpios = <&gpio0 RK_PC4 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "default-on";
+			linux,default-trigger = "heartbeat";
 			pinctrl-names = "default";
 			pinctrl-0 = <&led_sys_en>;
 		};
 
 		/*
-		 * Stock kernel DTB defines "work" on gpio0 RK_PC0 with the
-		 * heartbeat trigger (the node itself is disabled in the stock
-		 * tree).  Keep the same pin and trigger here.
+		 * Left wireless LED: gpio4 C5 (global 149), active high.
+		 * The stock firmware drives this as the AP LED; OpenWrt uses
+		 * the netdev trigger on wlan0 so it blinks with wireless
+		 * traffic (configured in /etc/config/system).
 		 */
-		work {
-			label = "work";
-			gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "heartbeat";
+		wlan {
+			label = "wlan";
+			gpios = <&gpio4 RK_PC5 GPIO_ACTIVE_HIGH>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&led_work_en>;
+			pinctrl-0 = <&led_wlan_en>;
 		};
 	};
 
@@ -658,8 +658,8 @@
 			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		led_work_en: led_work_en {
-			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		led_wlan_en: led_wlan_en {
+			rockchip,pins = <4 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };

@@ -35,6 +35,21 @@ mkdir -p "$DTS_DIR"
 install -m 0644 "$ROOT/files/rk3568-jiyun-a10.dts" "$DTS_DIR/rk3568-jiyun-a10.dts"
 
 # ---------------------------------------------------------------------------
+# 1b. RTL8367S switch LED registers
+#
+# The mainline rtl8365mb DSA driver never touches the switch LED registers, so
+# the RTL8367S stays at its power-on default and every port LED is permanently
+# on.  The vendor driver programmed 0x1b03=0x222 (all groups Link/Act),
+# 0x1b24=0x1f1f (groups 0/1 -> ports 0-4) and enabled OCP 0xa442 bit 5 on each
+# PHY.  Carry the same setup as a small kernel patch.
+# ---------------------------------------------------------------------------
+say "install rtl8365mb LED patch"
+RK_PATCH_DIR="$LEDE/target/linux/rockchip/patches-6.18"
+mkdir -p "$RK_PATCH_DIR"
+install -m 0644 "$ROOT/kernel/backport-6.18/910-rtl8365mb-led.patch" \
+	"$RK_PATCH_DIR/910-rtl8365mb-led.patch"
+
+# ---------------------------------------------------------------------------
 # 2. device recipe (appended to armv8.mk, idempotent)
 # ---------------------------------------------------------------------------
 say "append device recipe to armv8.mk"
@@ -161,6 +176,10 @@ install -m 0755 "$ROOT/files/99-jiyun-branding" "$BASE/etc/uci-defaults/99-jiyun
 
 # one-time first-boot rootfs resize to fill the eMMC partition
 install -m 0755 "$ROOT/files/99-jiyun-resize" "$BASE/etc/uci-defaults/99-jiyun-resize"
+
+# LED defaults: left = wlan0 traffic, middle = sys (boot heartbeat -> solid),
+# right = wlan1/M.2 traffic.  Exposed in LuCI -> System -> LED Configuration.
+install -m 0755 "$ROOT/files/99-jiyun-led" "$BASE/etc/uci-defaults/99-jiyun-led"
 
 # LuCI overview: hide the DSA CPU/conduit port (eth0), show lan1-3/wan only.
 # This must go into the global files/ overlay (applied after all packages),

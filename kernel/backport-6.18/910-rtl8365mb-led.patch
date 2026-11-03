@@ -1,0 +1,41 @@
+--- a/drivers/net/dsa/realtek/rtl8365mb.c
++++ b/drivers/net/dsa/realtek/rtl8365mb.c
+@@ -1977,6 +1977,38 @@
+ 		goto out_error;
+ 	}
+ 
++	/*
++	 * Match the stock RTL8367S LED setup.  The mainline driver leaves the
++	 * switch LED registers at their power-on defaults, which on this board
++	 * means every port LED is permanently on.  The vendor driver programs
++	 * all three LED groups as Link/Act and maps groups 0/1 to the five UTP
++	 * ports (0-4); it also sets OCP 0xa442 bit 5 to enable the LED output
++	 * of each PHY.
++	 */
++	if (mb->chip_info->chip_ver == 0x00a0) {
++		ret = regmap_write(priv->map, 0x1b03, 0x0222);
++		if (ret)
++			goto out_error;
++		ret = regmap_write(priv->map, 0x1b24, 0x1f1f);
++		if (ret)
++			goto out_error;
++		ret = regmap_write(priv->map, 0x1b33, 0x0000);
++		if (ret)
++			goto out_error;
++
++		for (i = 0; i < 5; i++) {
++			u16 val;
++
++			ret = rtl8365mb_phy_ocp_read(priv, i, 0xa442, &val);
++			if (ret)
++				goto out_error;
++			val |= BIT(5);
++			ret = rtl8365mb_phy_ocp_write(priv, i, 0xa442, val);
++			if (ret)
++				goto out_error;
++		}
++	}
++
+ 	/* Set up cascading IRQs */
+ 	ret = rtl8365mb_irq_setup(priv);
+ 	if (ret == -EPROBE_DEFER)

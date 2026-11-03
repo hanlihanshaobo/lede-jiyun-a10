@@ -19,10 +19,6 @@ on:
         description: "Upstream branch/tag/commit (branch or 40-char sha)"
         required: false
         default: "cc4d5400d29734c1133423b1e45258fcb0dddf8d"
-      publish_release:
-        description: "Publish/refresh the GitHub 'latest' release"
-        type: boolean
-        default: false
   push:
     branches: [main]
     paths-ignore:
@@ -445,7 +441,7 @@ jobs:
   # -------------------------------------------------------------------------
   release:
     needs: [build, pack-emmc, pack-spi]
-    if: ${{ always() && !cancelled() && needs.build.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+    if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -469,6 +465,16 @@ jobs:
         run: |
           set -eux
           ls -l dist
+
+          # Move the rolling 'latest' tag to this build's commit so the
+          # auto-generated source archive matches the firmware.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/latest" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/latest" -f sha="$GITHUB_SHA" >/dev/null
+          fi
 
           IMGS=$(ls dist/*.img 2>/dev/null || true)
           [ -n "$IMGS" ] || { echo "nothing to publish"; exit 1; }

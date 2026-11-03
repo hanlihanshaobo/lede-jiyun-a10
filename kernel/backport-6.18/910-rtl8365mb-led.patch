@@ -1,6 +1,6 @@
---- a/drivers/net/dsa/realtek/rtl8365mb.c
-+++ b/drivers/net/dsa/realtek/rtl8365mb.c
-@@ -1977,6 +1977,38 @@
+--- a/drivers/net/dsa/realtek/rtl8365mb_main.c
++++ b/drivers/net/dsa/realtek/rtl8365mb_main.c
+@@ -2439,6 +2439,40 @@
  		goto out_error;
  	}
  
@@ -13,6 +13,8 @@
 +	 * of each PHY.
 +	 */
 +	if (mb->chip_info->chip_ver == 0x00a0) {
++		int port;
++
 +		ret = regmap_write(priv->map, 0x1b03, 0x0222);
 +		if (ret)
 +			goto out_error;
@@ -23,14 +25,14 @@
 +		if (ret)
 +			goto out_error;
 +
-+		for (i = 0; i < 5; i++) {
++		for (port = 0; port < 5; port++) {
 +			u16 val;
 +
-+			ret = rtl8365mb_phy_ocp_read(priv, i, 0xa442, &val);
++			ret = rtl8365mb_phy_ocp_read(priv, port, 0xa442, &val);
 +			if (ret)
 +				goto out_error;
 +			val |= BIT(5);
-+			ret = rtl8365mb_phy_ocp_write(priv, i, 0xa442, val);
++			ret = rtl8365mb_phy_ocp_write(priv, port, 0xa442, val);
 +			if (ret)
 +				goto out_error;
 +		}

@@ -4,14 +4,16 @@
 
 - 每个逻辑 SSID 一个独立 bridge + `/24` 子网 + DHCP + firewall zone
 - 每个 SSID 绑定一条 PassWall2 访问控制（ACL）规则
-- 批量模板：SSID 前缀+起始序号、2.4G/5G 数量、全局密码/加密/隔离、默认线路、可选线路池
+- 默认停用：全局“启用本页配置”默认关闭，勾选并“保存并应用”后才生成
+- 批量模板：SSID 前缀（默认 Dwrt）+起始序号、2.4G/5G 数量（默认各 15）、全局密码/加密/隔离、默认线路、可选线路池
+- 可选“覆盖默认 2.4G/5G WiFi”：应用时停用固件自带的 `default_radio0/1`，把射频 BSS 让给生成的 SSID
 - 预设：模板可另存/载入/删除，常用组合一键切换
 - 每行只保留 SSID/频段/线路/启用/状态，密码/加密/隔离统一由模板决定
 - 状态列显示 UP/DOWN 和当前关联客户端数；每行可“测试”该线路的 DNS+HTTP
 - 导出/导入整份配置（模板+预设+SSID 行），方便多台 A10 复制
 - 页面使用 LuCI 主题 CSS 变量，兼容 design / argon 的明暗主题
 - “双频”一行表示同一个 SSID 同时开 2.4G/5G，共用一个子网和线路
-- 保留原有 `default_radio0/1`（`jiyun-mac.sh` 管理的默认 SSID）不动
+- 默认保留原有 `default_radio0/1`（`jiyun-mac.sh` 管理的默认 SSID）；只有勾选“覆盖默认”时才临时停用，取消勾选自动恢复
 
 ## 入口
 
@@ -52,8 +54,9 @@ LuCI：**网络 → 多 SSID 分流**
 - 导出内容含明文 WiFi 密码；导入会覆盖模板/预设/SSID 行，但不会自动应用。
 - PassWall2 必须先完成初始化（至少打开一次并配置节点），并保持运行；本工具只写 ACL，不会替你启用 PassWall2 全局开关。
 - PassWall2 全局关闭时，会额外生成一条 `mws_unmatched_direct`（mode=0）ACL，把未匹配流量保持直连，避免 PassWall2 默认 ACL 把 LAN/默认 SSID 带到全局节点；PassWall2 全局开启时不加这条。这条只覆盖客户端，路由器本机流量仍受 PassWall2“本机代理”设置影响。
-- 每个非“直连”的 SSID 会在 PassWall2 里生成一条 `acl_rule`，并启动对应的 core/dnsmasq 实例；4-8 个 SSID 在 2GB 内存的 A10 上没问题，不建议开几十个。
-- 2.4G 建议不超过 4 个 BSS，5G 建议不超过 8 个 BSS（beacon/airtime 限制）。
+- 每个非“直连”的 SSID 会在 PassWall2 里生成一条 `acl_rule`，并启动对应的 core/dnsmasq 实例；默认模板是 2.4G/5G 各 15 个，30 个 SSID 对 2GB 内存压力较大，建议按需要减少。
+- 默认建议 2.4G/5G 各不超过 15 个 BSS；实际可用数量受射频 BSS 上限和 beacon/airtime 影响。
+- 勾选“覆盖默认 2.4G/5G WiFi”会停用 `default_radio0/1`；应用脚本用 `multiwifi.global.default_off` 记录是自己关的，取消勾选时只恢复这两个默认 SSID。
 - OpenClash 可以保留安装，但不要和 PassWall2 同时运行；页面会检测并提示。
 - 本工具默认关闭新 SSID 的 IPv6（DHCPv6/RA disabled），避免 PassWall2 IPv6 规则不完整导致泄漏。
 - 修改无线配置可能瞬断 WiFi；建议从 LAN 口操作。页面提供“恢复上次应用的配置”。

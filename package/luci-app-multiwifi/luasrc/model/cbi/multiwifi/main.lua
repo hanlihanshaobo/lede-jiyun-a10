@@ -28,12 +28,12 @@ local function ensure_ui_sections()
 			changed = true
 		end
 	end
-	ensure("global", "global", { enabled = "1", subnet_base = "192.168.80.0/24" })
+	ensure("global", "global", { enabled = "0", subnet_base = "192.168.80.0/24" })
 	ensure("template", "template", {
-		ssid_prefix = "WiFi", ssid_start = "1",
-		count_24 = "1", count_5g = "1",
+		ssid_prefix = "Dwrt", ssid_start = "1",
+		count_24 = "15", count_5g = "15",
 		encryption = "psk2", isolate = "1",
-		node = "__direct__", replace_rows = "1",
+		node = "__direct__", replace_rows = "1", replace_default = "0",
 	})
 	ensure("preset_ui", "preset_ui", {})
 	ensure("import_ui", "import_ui", {})
@@ -122,6 +122,7 @@ end
 local TEMPLATE_FIELDS = {
 	"ssid_prefix", "ssid_start", "count_24", "count_5g",
 	"key", "encryption", "isolate", "node", "node_pool", "replace_rows",
+	"replace_default",
 }
 
 -- Copy template values from one UCI section to another.
@@ -160,9 +161,9 @@ s = m:section(NamedSection, "global", "global", translate("全局设置"))
 s.addremove = false
 
 o = s:option(Flag, "enabled", translate("启用本页配置"))
-o.default = 1
+o.default = 0
 o.rmempty = false
-o.description = translate("关闭后保留本页的 SSID 配置，但会移除生成的网络/无线/防火墙/PassWall2 ACL；重新启用后重建。单行“启用”取消也是同样效果。")
+o.description = translate("默认停用。勾选并“保存并应用”后才会生成网络/无线/防火墙/PassWall2 ACL；取消勾选会移除这些生成段。单行“启用”取消也是同样效果。")
 
 o = s:option(Value, "subnet_base", translate("自动子网起始"))
 o.default = "192.168.80.0/24"
@@ -189,9 +190,9 @@ s.addremove = false
 s.description = translate("这里填一次，点“按模板生成 SSID”批量建行。生成后每行仍可单独改 SSID、频段和线路；密码、加密、隔离统一使用模板值。")
 
 o = s:option(Value, "ssid_prefix", translate("SSID 前缀"))
-o.default = "WiFi"
+o.default = "Dwrt"
 o.rmempty = false
-o.description = translate("生成名称：前缀-序号，例如 WiFi-1、WiFi-2。")
+o.description = translate("生成名称：前缀-序号，例如 Dwrt-1、Dwrt-2。")
 o.validate = function(self, value)
 	value = tostring(value or "")
 	if value == "" then
@@ -209,16 +210,16 @@ o.datatype = "range(1,99)"
 o.rmempty = false
 
 o = s:option(Value, "count_24", translate("2.4G 数量"))
-o.default = 1
+o.default = 15
 o.datatype = "range(0,16)"
 o.rmempty = false
-o.description = translate("0 表示不生成 2.4G；建议不超过 4 个。")
+o.description = translate("0 表示不生成 2.4G；建议不超过 15 个。")
 
 o = s:option(Value, "count_5g", translate("5G 数量"))
-o.default = 1
+o.default = 15
 o.datatype = "range(0,16)"
 o.rmempty = false
-o.description = translate("0 表示不生成 5G；建议不超过 8 个。")
+o.description = translate("0 表示不生成 5G；建议不超过 15 个。")
 
 o = s:option(Value, "key", translate("全局密码"))
 o.password = true
@@ -260,6 +261,11 @@ o.default = 1
 o.rmempty = false
 o.description = translate("生成前删除现有 SSID 行；取消勾选则追加。")
 
+o = s:option(Flag, "replace_default", translate("覆盖默认 2.4G/5G WiFi"))
+o.default = 0
+o.rmempty = false
+o.description = translate("勾选后，应用时停用固件自带的 default_radio0/1（Dwrt-… 两个默认 SSID），只保留本页生成的 SSID；取消勾选会恢复它们。")
+
 -- ---------------------------------------------------------------------------
 -- Presets: snapshots of the template above (家用/访客/…)
 -- ---------------------------------------------------------------------------
@@ -283,6 +289,13 @@ end
 o = s:option(Value, "name", translate("新预设名称"))
 o.rmempty = true
 o.datatype = "maxlength(16)"
+
+-- The three buttons live in a one-row table: a NamedSection renders every
+-- option on its own row, which wasted three lines for three short buttons.
+local preset_actions = { preset = {} }
+s = m:section(Table, preset_actions)
+s.template = "cbi/tblsection"
+s.anonymous = true
 
 o = s:option(Button, "_preset_load", " ")
 o.inputtitle = translate("载入模板")
@@ -335,39 +348,46 @@ s = m:section(SimpleSection, translate("运行状态"))
 o = s:option(DummyValue, "_status")
 o.rawhtml = true
 o.cfgvalue = function()
-	local out = {}
+	-- Wrap everything in one block: the design theme lays a cbi-value-field
+	-- out as a flex container, so bare <span>/<br/> children flow into
+	-- columns instead of stacking.
+	local out = { "<div class='mw-status'>" }
+	local function line(html)
+		out[#out + 1] = "<div>" .. html .. "</div>"
+	end
 	local has_pw = fs.access("/etc/config/passwall2")
 
 	if has_pw then
-		out[#out + 1] = translate("PassWall2：已安装")
 		local nodes = 0
 		uci:foreach("passwall2", "nodes", function() nodes = nodes + 1 end)
-		out[#out + 1] = string.format(translate("可用线路：%d 个"), nodes)
+		line(translate("PassWall2：已安装") .. " · " ..
+			string.format(translate("可用线路：%d 个"), nodes))
 	else
-		out[#out + 1] = "<span class='mw-err'>" .. translate("PassWall2：未安装") .. "</span>"
+		line("<span class='mw-err'>" .. translate("PassWall2：未安装") .. "</span>")
 	end
 
 	if has_pw and sys.call("pidof xray >/dev/null 2>&1 || pidof sing-box >/dev/null 2>&1") == 0 then
-		out[#out + 1] = "<span class='mw-up'>" .. translate("PassWall2：运行中") .. "</span>"
+		line("<span class='mw-up'>" .. translate("PassWall2：运行中") .. "</span>")
 	else
-		out[#out + 1] = "<span class='mw-down'>" .. translate("PassWall2：未运行") .. "</span>"
+		line("<span class='mw-down'>" .. translate("PassWall2：未运行") .. "</span>")
 	end
 
 	if sys.call("pidof clash >/dev/null 2>&1 || pidof mihomo >/dev/null 2>&1 || pidof clash_tun >/dev/null 2>&1") == 0 then
-		out[#out + 1] = "<span class='mw-err'>" ..
-			translate("OpenClash 正在运行，请先停止，避免和 PassWall2 抢 nftables/DNS。") .. "</span>"
+		line("<span class='mw-err'>" ..
+			translate("OpenClash 正在运行，请先停止，避免和 PassWall2 抢 nftables/DNS。") .. "</span>")
 	else
-		out[#out + 1] = translate("OpenClash：未运行（可以保留安装，但不要和 PassWall2 同时启动）")
+		line(translate("OpenClash：未运行（可以保留安装，但不要和 PassWall2 同时启动）"))
 	end
 
 	local log = fs.readfile("/tmp/multiwifi-apply.log")
 	if log and #log > 0 then
-		out[#out + 1] = "<details><summary>" .. translate("上次应用日志") ..
+		line("<details><summary>" .. translate("上次应用日志") ..
 			"</summary><pre class='mw-pre' style='max-height:320px'>" ..
-			util.pcdata(log) .. "</pre></details>"
+			util.pcdata(log) .. "</pre></details>")
 	end
 
-	return table.concat(out, "<br/>")
+	out[#out + 1] = "</div>"
+	return table.concat(out)
 end
 
 -- ---------------------------------------------------------------------------
@@ -711,12 +731,17 @@ o.cfgvalue = function()
 .mw-up { color: #27ae60; font-weight: bold; }
 .mw-down { color: var(--text_color, #888); opacity: .65; }
 .mw-err { color: #e74c3c; }
+.mw-status { line-height: 1.7; }
+.mw-status > div { margin: 2px 0; }
 .mw-clients { color: var(--active_color, #5ea69b); }
 .mw-ok { color: #27ae60; }
 .mw-fail { color: #e74c3c; font-weight: bold; }
 .mw-test { font-size: 90%; }
-#cbi-table-table .cbi-button { margin: 2px 6px 2px 0; }
-#cbi-table-table, #cbi-multiwifi-ssid { overflow-x: auto; }
+.cbi-tblsection .cbi-button { margin: 2px 6px 2px 0; }
+.cbi-tblsection { overflow-x: auto; }
+/* button-only tables (preset actions, SSID actions): no need for a header row */
+#cbi-table-table tr.cbi-section-table-titles { display: none; }
+#cbi-table-table td.cbi-value-field { padding: 2px 6px; }
 </style>
 <div class="mw-app" style="line-height:1.75">
 <p><b>工作方式：</b>一个 SSID = 一个独立 bridge/子网 = 一条 PassWall2 ACL。2.4G/5G 分开计数，每行选频段；同一 SSID 要双频请用“双频”一行，不要建两行同名。</p>
@@ -730,13 +755,15 @@ SSID C ── br-mws_zzzzzz 192.168.90.1/24 ── PassWall2 ACL ── 直连</
 <li><b>OpenClash：</b>可以保留安装，但不要和 PassWall2 同时运行；页面顶部会检测并提示。</li>
 <li><b>应用：</b>“保存并应用”才会重启无线/防火墙/PassWall2；“保存”只写配置不生效。建议从 LAN 口操作，改无线可能瞬断 WiFi。</li>
 <li><b>回滚：</b>每次应用前会备份 network/dhcp/firewall/wireless/passwall2 和上一版 multiwifi；应用失败会自动回滚，也可以点“恢复上次应用的配置”手工回滚。</li>
-<li><b>数量：</b>2.4G 建议不超过 4 个 SSID，5G 不超过 8 个；每个非直连 SSID 会多一套 core + dnsmasq，2GB 内存开 4-8 个没问题。</li>
-<li><b>批量模板：</b>前缀+起始序号+2.4G/5G 数量，密码/加密/隔离/默认线路一次设置；线路池可让生成的 SSID 按顺序轮换线路；默认覆盖已有行，可取消。</li>
+<li><b>全局开关：</b>本页默认停用；勾选“启用本页配置”并“保存并应用”后才生成 network/wireless/firewall/ACL，取消勾选会移除所有 <code>mws_*</code> 段。</li>
+<li><b>数量：</b>默认 2.4G/5G 各 15 个；每个非直连 SSID 会多一套 core + dnsmasq，30 个 SSID 对 2GB 内存压力较大，请按实际需要减少。</li>
+<li><b>批量模板：</b>前缀（默认 Dwrt）+起始序号+2.4G/5G 数量，密码/加密/隔离/默认线路一次设置；线路池可让生成的 SSID 按顺序轮换线路；默认覆盖已有行，可取消。</li>
+<li><b>默认 WiFi：</b>勾选“覆盖默认 2.4G/5G WiFi”后，应用时会停用固件自带的 <code>default_radio0/1</code>，把射频 BSS 让给生成的 SSID；取消勾选会恢复。</li>
 <li><b>预设：</b>把当前模板“另存为预设”（家用/访客/…），以后一键载入，不用重新填。</li>
 <li><b>线路测试：</b>先“保存并应用”，再点每行“测试”；它会在该 SSID 的子网里模拟客户端，走该行 ACL 测 DNS+HTTP，结果在“线路测试”列。</li>
 <li><b>每行只改：</b>SSID、频段、线路、启用；密码/加密/隔离不再逐行重复填。</li>
 <li><b>子网：</b>统一从“自动子网起始”顺序分配 /24；不能和 LAN/WAN 或已有 SSID 冲突。</li>
-<li><b>原有 SSID：</b><code>default_radio0/1</code>（Dwrt-…）不由本页管理，保留原样。</li>
+<li><b>原有 SSID：</b><code>default_radio0/1</code>（Dwrt-…）默认保留；需要腾出射频 BSS 时勾选“覆盖默认 2.4G/5G WiFi”。</li>
 <li><b>IPv6：</b>新 SSID 默认关闭 DHCPv6/RA，避免 PassWall2 IPv6 规则不完整导致泄漏；需要 IPv6 请单独配置。</li>
 <li><b>生成段：</b>network/dhcp/firewall/wireless/passwall2 里所有 <code>mws_*</code> 段由本页管理，不要手工改；取消“启用”或全局停用会移除这些段，但保留本页 SSID 配置。</li>
 <li><b>BSS 没起来：</b>SSH 执行 <code>wifi down; wifi up</code>（会断开所有 WiFi 几秒）。</li>

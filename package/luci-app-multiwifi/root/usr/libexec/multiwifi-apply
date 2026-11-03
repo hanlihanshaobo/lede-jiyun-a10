@@ -657,8 +657,8 @@ if [ "$SSID_COUNT" -gt 0 ]; then
 	fi
 fi
 
-[ "$BSS24" -le 4 ] || log "WARNING: 2.4G SSID 数量为 $BSS24，建议不超过 4 个"
-[ "$BSS5" -le 8 ] || log "WARNING: 5G SSID 数量为 $BSS5，建议不超过 8 个"
+[ "$BSS24" -le 15 ] || log "WARNING: 2.4G SSID 数量为 $BSS24，建议不超过 15 个"
+[ "$BSS5" -le 15 ] || log "WARNING: 5G SSID 数量为 $BSS5，建议不超过 15 个"
 
 # ---- resolve radios -------------------------------------------------------
 RADIO24=""
@@ -765,6 +765,29 @@ fi
 for c in network dhcp firewall wireless passwall2; do
 	[ -f "/etc/config/$c" ] && uci -q commit "$c" || true
 done
+
+# ---- stock default SSIDs --------------------------------------------------
+# Optional: disable the firmware's default_radio0/1 so the generated BSS set
+# does not compete for the radio's BSS slots.  multiwifi.global.default_off
+# records that *we* disabled them, so turning the option off restores only
+# those defaults and leaves a user-disabled SSID alone.
+if [ "$(uci_get "multiwifi.template.replace_default")" = "1" ] && [ "$SSID_COUNT" -gt 0 ]; then
+	for r in 0 1; do
+		if [ -n "$(uci_get "wireless.default_radio$r")" ]; then
+			uci -q set "wireless.default_radio$r.disabled=1"
+		fi
+	done
+	uci -q set "multiwifi.global.default_off=1"
+elif [ "$(uci_get "multiwifi.global.default_off")" = "1" ]; then
+	for r in 0 1; do
+		if [ -n "$(uci_get "wireless.default_radio$r")" ]; then
+			uci -q set "wireless.default_radio$r.disabled=0"
+		fi
+	done
+	uci -q delete "multiwifi.global.default_off"
+fi
+
+[ -f /etc/config/multiwifi ] && uci -q commit multiwifi || true
 
 reload_services
 

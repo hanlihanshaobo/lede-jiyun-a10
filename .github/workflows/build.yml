@@ -19,6 +19,10 @@ on:
         description: "Upstream branch/tag/commit (branch or 40-char sha)"
         required: false
         default: "cc4d5400d29734c1133423b1e45258fcb0dddf8d"
+      publish_release:
+        description: "Publish/refresh the GitHub 'latest' release"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths-ignore:
@@ -441,7 +445,7 @@ jobs:
   # -------------------------------------------------------------------------
   release:
     needs: [build, pack-emmc, pack-spi]
-    if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
+    if: ${{ always() && !cancelled() && needs.build.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.publish_release }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write

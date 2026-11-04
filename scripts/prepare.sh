@@ -354,6 +354,37 @@ PY
 fi
 
 # ---------------------------------------------------------------------------
+# 4c. initrd support for the first-boot rootfs resize
+#
+# The rockchip armv8 kernel config ships with BLK_DEV_INITRD disabled and the
+# generic config disables RD_GZIP.  U-Boot loads the FIT ramdisk and passes it
+# via /chosen/linux,initrd-start/end, but without these symbols the kernel
+# ignores it and mounts the 256 MB rootfs directly.  Enabling them lets /init
+# run e2fsck/resize2fs on the unmounted p1 before switch_root (see
+# scripts/initramfs-init).
+# ---------------------------------------------------------------------------
+say "enable initrd support for the first-boot resize initramfs"
+RKCFG=$(ls "$LEDE"/target/linux/rockchip/*/config-$KVER 2>/dev/null | head -1)
+if [ -z "$RKCFG" ]; then
+	RKCFG=$(ls "$LEDE"/target/linux/rockchip/*/config-6.* 2>/dev/null | head -1)
+fi
+[ -f "$RKCFG" ] || { echo "no target/linux/rockchip/*/config-$KVER in $LEDE" >&2; exit 1; }
+
+sed \
+	-e 's/^# CONFIG_BLK_DEV_INITRD is not set/CONFIG_BLK_DEV_INITRD=y/' \
+	-e 's/^CONFIG_BLK_DEV_INITRD=.*/CONFIG_BLK_DEV_INITRD=y/' \
+	-e 's/^# CONFIG_RD_GZIP is not set/CONFIG_RD_GZIP=y/' \
+	-e 's/^CONFIG_RD_GZIP=.*/CONFIG_RD_GZIP=y/' \
+	"$RKCFG" > "$RKCFG.tmp" && mv "$RKCFG.tmp" "$RKCFG"
+for sym in CONFIG_BLK_DEV_INITRD CONFIG_RD_GZIP; do
+	grep -q "^$sym=y" "$RKCFG" || echo "$sym=y" >> "$RKCFG"
+done
+grep -E '^CONFIG_(BLK_DEV_INITRD|RD_GZIP)=y' "$RKCFG" || {
+	echo "ERROR: could not enable initrd support in $RKCFG" >&2
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
 # 5. generic patch series
 #
 # 6.18 needed the MxL862xx series dropped: it stopped applying and took the

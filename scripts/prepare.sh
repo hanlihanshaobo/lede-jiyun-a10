@@ -215,6 +215,49 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_REALTEK_MDIO|NET
 }
 
 # ---------------------------------------------------------------------------
+# 4b. kmod-phy-realtek -> kmod-phy-package (7.3)
+#
+# 7.3 moved the shared PHY helpers into drivers/net/phy/phy_package.c
+# (CONFIG_PHY_PACKAGE, selected by REALTEK_PHY).  Upstream added the
+# kmod-phy-package definition and taught kmod-phy-micrel to depend on it, but
+# not kmod-phy-realtek.  Without that dependency kmod-phy-package is never
+# selected, phy_package.ko is not built, and the package stage fails with:
+#
+#   Package kmod-phy-realtek is missing dependencies for the following
+#   libraries: phy_package.ko
+#
+# Add the same versioned dependency upstream uses for micrel/marvell.
+# ---------------------------------------------------------------------------
+say "make kmod-phy-realtek depend on kmod-phy-package"
+NETDEV_MK="$LEDE/package/kernel/linux/modules/netdevices.mk"
+if ! grep -q '^define KernelPackage/phy-package$' "$NETDEV_MK"; then
+	echo "no KernelPackage/phy-package in this tree, nothing to do"
+else
+	python3 - "$NETDEV_MK" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path).read()
+
+start = src.index("define KernelPackage/phy-realtek\n")
+end = src.index("\nendef", start)
+block = src[start:end]
+
+if "kmod-phy-package" in block:
+    print("kmod-phy-realtek already depends on kmod-phy-package")
+    sys.exit(0)
+
+old = "DEPENDS:=+kmod-libphy +kmod-hwmon-core"
+new = old + " +(LINUX_6_18||LINUX_7_3):kmod-phy-package"
+if old not in block:
+    sys.exit("ERROR: unexpected kmod-phy-realtek DEPENDS in " + path)
+
+open(path, "w").write(src[:start] + block.replace(old, new, 1) + src[end:])
+print("patched kmod-phy-realtek DEPENDS")
+PY
+fi
+
+# ---------------------------------------------------------------------------
 # 5. generic patch series
 #
 # 6.18 needed the MxL862xx series dropped: it stopped applying and took the

@@ -20,7 +20,7 @@ FIT layout (identical to the stock one):
     0x1c600 (or right after the dtb)  LZMA compressed kernel
 
 Usage:
-    mkfit.py <template-header.bin> <Image> <dtb> <out.fit>
+    mkfit.py <template-header.bin> <Image> <dtb> <initramfs.cpio.gz> <out.fit>
 """
 
 import hashlib
@@ -124,9 +124,9 @@ def lzma_alone(data):
 
 
 def main():
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 6:
         sys.exit(__doc__)
-    tmpl, kern_img, dtb_file, out = sys.argv[1:5]
+    tmpl, kern_img, dtb_file, initrd_file, out = sys.argv[1:6]
 
     with open(tmpl, "rb") as f:
         header = f.read()
@@ -134,6 +134,8 @@ def main():
         kernel = f.read()
     with open(dtb_file, "rb") as f:
         dtb = f.read()
+    with open(initrd_file, "rb") as f:
+        initrd = f.read()
 
     kern_lzma = lzma_alone(kernel)
 
@@ -151,7 +153,15 @@ def main():
     fdt.set_u32("/images/kernel/data-position", kern_pos)
     fdt.set_bytes("/images/kernel/hash/value", hashlib.sha256(kern_lzma).digest())
 
-    total = kern_pos + len(kern_lzma)
+    # Initramfs (first-boot offline resize).  The template already has the
+    # /images/ramdisk node with type=ramdisk, compression=gzip and a safe
+    # RAM load address; only the data size/position/hash change here.
+    ram_pos = (kern_pos + len(kern_lzma) + DATA_ALIGN - 1) & ~(DATA_ALIGN - 1)
+    fdt.set_u32("/images/ramdisk/data-size", len(initrd))
+    fdt.set_u32("/images/ramdisk/data-position", ram_pos)
+    fdt.set_bytes("/images/ramdisk/hash/value", hashlib.sha256(initrd).digest())
+
+    total = ram_pos + len(initrd)
     fdt.set_totalsize(len(fdt.blob))       # the header itself (1536)
 
     out_blob = bytearray(fdt.blob)
@@ -159,6 +169,8 @@ def main():
     out_blob += dtb
     out_blob += b"\0" * (kern_pos - len(out_blob))
     out_blob += kern_lzma
+    out_blob += b"\0" * (ram_pos - len(out_blob))
+    out_blob += initrd
 
     with open(out, "wb") as f:
         f.write(out_blob)
@@ -168,6 +180,7 @@ def main():
     print("  dtb         : offset %#x  %d bytes" % (dtb_pos, len(dtb)))
     print("  kernel(lzma): offset %#x  %d bytes (uncompressed %d)" %
           (kern_pos, len(kern_lzma), len(kernel)))
+    print("  initramfs   : offset %#x  %d bytes" % (ram_pos, len(initrd)))
     print("  total       : %d bytes" % total)
 
 

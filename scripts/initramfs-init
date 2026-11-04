@@ -1,0 +1,55 @@
+#!/bin/busybox sh
+#
+# First-boot offline rootfs resize for the Jiyun A10.
+#
+# The flashed eMMC image contains a small ext4 inside the 7 GB p1.  The
+# kernel 6.18 online resize path cannot grow the make_ext4fs image past
+# ~377 MB (backup GDT layout), so this initramfs runs e2fsprogs *before*
+# the rootfs is mounted:
+#
+#   e2fsck -fy /dev/mmcblk0p1
+#   resize2fs /dev/mmcblk0p1        # no size -> p1 size, fully adaptive
+#
+# It then mounts p1 and switch_root()s into the real system.  A flag on the
+# rootfs makes subsequent boots skip the e2fsck/resize step.
+
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sys /sys
+/bin/busybox mount -t devtmpfs dev /dev 2>/dev/null || true
+
+ROOT=/dev/mmcblk0p1
+i=0
+while [ ! -b "$ROOT" ] && [ "$i" -lt 50 ]; do
+	/bin/busybox sleep 1
+	i=$((i + 1))
+done
+
+/bin/busybox mkdir -p /mnt
+
+# Already expanded (flag on the rootfs)?  Skip the offline work.
+if /bin/busybox mount -o ro "$ROOT" /mnt 2>/dev/null; then
+	if [ -f /mnt/etc/.expanded ]; then
+		/bin/busybox umount /mnt
+		/bin/busybox mount -o ro "$ROOT" /mnt
+		exec /bin/busybox switch_root /mnt /sbin/init
+	fi
+	/bin/busybox umount /mnt
+fi
+
+# Offline resize: p1 is not mounted here.
+if [ -x /sbin/e2fsck ]; then
+	/sbin/e2fsck -fy "$ROOT" >/dev/console 2>&1 || true
+fi
+if [ -x /sbin/resize2fs ]; then
+	/sbin/resize2fs "$ROOT" >/dev/console 2>&1 || true
+fi
+
+# Record the flag (best effort) and hand over to the real rootfs.
+if /bin/busybox mount -o rw "$ROOT" /mnt 2>/dev/null; then
+	/bin/busybox touch /mnt/etc/.expanded
+	/bin/busybox sync
+	/bin/busybox umount /mnt
+fi
+
+/bin/busybox mount -o ro "$ROOT" /mnt
+exec /bin/busybox switch_root /mnt /sbin/init

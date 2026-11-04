@@ -382,7 +382,6 @@ install -m 0755 "$ROOT/files/99-jiyun-net" "$BASE/etc/uci-defaults/99-jiyun-net"
 install -m 0755 "$ROOT/files/99-jiyun-branding" "$BASE/etc/uci-defaults/99-jiyun-branding"
 
 # one-time first-boot rootfs resize to fill the eMMC partition
-install -m 0755 "$ROOT/files/99-jiyun-resize" "$BASE/etc/uci-defaults/99-jiyun-resize"
 
 # LED defaults: left = wlan0 traffic, middle = sys (boot heartbeat -> solid),
 # right = wlan1/M.2 traffic.  Exposed in LuCI -> System -> LED Configuration.

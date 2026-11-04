@@ -154,8 +154,11 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
   flips them (it also has to append `NET_DSA_REALTEK_MDIO`, which is not in the
   7.3 fragment at all).
 - **Rockchip target patches**: upstream has no `target/linux/rockchip/patches-7.3`
-  yet, so `prepare.sh` seeds it from `patches-6.18` and skips the five patches
-  that do not apply to 7.3.1 (listed in the script). Our own patches go on top.
+  yet, so `prepare.sh` seeds it from `patches-6.18` and skips the seven patches
+  that do not apply to 7.3.1 (`0130`, `039-*`, `106-nanopi-r4s-sd-power-cycle`,
+  `113`, `700`; reasons in the script). Our own patches go on top. The order
+  matters: target patches are applied *after* generic backport/pending/hack, so
+  a patch that applies to a pristine 7.3.1 tree can still fail here (`039-2`).
 - **BTF must be off** (`# CONFIG_KERNEL_DEBUG_INFO_BTF is not set`), otherwise
   `cfg80211` fails module BTF validation and the whole wireless stack refuses to
   load.

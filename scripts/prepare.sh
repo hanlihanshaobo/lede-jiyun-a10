@@ -81,7 +81,8 @@ install -m 0644 "$ROOT/files/rk3568-jiyun-a10.dts" "$DTS_DIR/rk3568-jiyun-a10.dt
 #
 #   0130-net-dsa-add-motorcomm-yt921x   DSA tag ids sit next to the MxL862
 #                                      ones; that switch is not on this board
-#   039-1-...inno-usb2-Simplify...      already upstream in 7.3
+#   039-*  inno-usb2 clkout/RK3528      RK3528-only, and the 7.3 phy file
+#                                      already carries the usbgrf rework
 #   106-nanopi-r4s-sd-power-cycle       R4S DTS changed upstream
 #   113-...stmmac-SGMII-QSGMII          6/14 hunks, not this board
 #   700-...stmmac-disable-VLAN-hw-filter include/linux/stmmac.h moved
@@ -102,7 +103,7 @@ else
 	shopt -s nullglob
 	for f in "$SRC_PATCH_DIR"/*.patch; do
 		case "$(basename "$f")" in
-		0130-*|039-1-*|106-nanopi-r4s-sd-power-cycle*|113-*|700-*)
+		0130-*|039-*|106-nanopi-r4s-sd-power-cycle*|113-*|700-*)
 			echo "skipping $(basename "$f") (does not apply to $KVER)"
 			;;
 		*)

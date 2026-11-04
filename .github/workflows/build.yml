@@ -236,6 +236,30 @@ jobs:
           cd lede
           make download -j"$(nproc)" || make download -j1 V=s
 
+      # mt76 is built from the package tree (github.com/openwrt/mt76), not
+      # from target/linux, so "Preflight kernel patches" cannot catch a
+      # broken mt76 patch.  Apply them now: a mismatch fails in ~1 min
+      # instead of after the whole toolchain/kernel build.
+      - name: Preflight mt76 patches
+        timeout-minutes: 15
+        run: |
+          cd lede
+          set -o pipefail
+          if make package/kernel/mt76/prepare V=s 2>&1 | tee /tmp/mt76-prepare.log; then
+            echo "all mt76 patches applied"
+            exit 0
+          fi
+
+          { echo '### mt76 patches failed'; echo '```'
+            grep -B9 -m1 '\*\*\* \[' /tmp/mt76-prepare.log || tail -30 /tmp/mt76-prepare.log
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+          grep -B9 -m1 '\*\*\* \[' /tmp/mt76-prepare.log > /tmp/ctx || tail -15 /tmp/mt76-prepare.log > /tmp/ctx
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done < /tmp/ctx
+          exit 1
+
       - name: Build
         run: |
           cd lede

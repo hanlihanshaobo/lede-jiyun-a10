@@ -53,9 +53,19 @@ install -m 0644 "$ROOT/kernel/backport-6.18/910-rtl8365mb-led.patch" \
 # (CMDTHREAD_SET_LED_STATUS / Andes tag 0x17ed).  It lets us try the
 # vendor CID/payload through the mainline MCU path without rebuilding
 # for every CID.
+#
+# NOTE: mt76 is NOT built from the kernel tree on this target: it comes
+# from the `mt76` package (github.com/openwrt/mt76, pinned in
+# package/kernel/mt76/Makefile) and only its own patches-6.18 directory
+# is applied.  Patching the kernel tree here has no effect.
 say "install mt76 vendor LED debugfs patch"
+MT76_PATCH_DIR="$LEDE/package/kernel/mt76/patches-6.18"
+if [ ! -d "$MT76_PATCH_DIR" ]; then
+	echo "ERROR: $MT76_PATCH_DIR not found (mt76 package layout changed)" >&2
+	exit 1
+fi
 install -m 0644 "$ROOT/kernel/backport-6.18/920-mt76-vendor-led-debugfs.patch" \
-	"$RK_PATCH_DIR/920-mt76-vendor-led-debugfs.patch"
+	"$MT76_PATCH_DIR/200-vendor-led-debugfs.patch"
 
 # ---------------------------------------------------------------------------
 # 2. device recipe (appended to armv8.mk, idempotent)

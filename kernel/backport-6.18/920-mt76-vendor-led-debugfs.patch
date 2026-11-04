@@ -1,5 +1,6 @@
---- a/drivers/net/wireless/mediatek/mt76/debugfs.c
-+++ b/drivers/net/wireless/mediatek/mt76/debugfs.c
+diff --git a/debugfs.c b/debugfs.c
+--- a/debugfs.c
++++ b/debugfs.c
 @@ -4,6 +4,38 @@
   */
  #include "mt76.h"

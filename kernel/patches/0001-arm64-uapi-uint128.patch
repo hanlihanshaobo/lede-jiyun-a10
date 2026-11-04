@@ -1,0 +1,56 @@
+From: Jiyun A10 build <noreply@localhost>
+Subject: [PATCH] arm64: uapi: use __uint128_t instead of __u128
+
+7.3 switched the 128-bit members of the arm64 UAPI to the __u128 typedef
+from <linux/types.h>.  That typedef only exists when the compiler
+advertises __SIZEOF_INT128__, and user space that reaches <asm/ptrace.h>
+through <asm/bpf_perf_event.h> (libbpf does) fails to build with:
+
+  asm/ptrace.h:96:9: error: unknown type name '__u128'
+
+The same change broke iptables/ebtables on 7.3, which bundle an old
+linux/types.h.  __uint128_t is the compiler builtin the 6.18 headers used,
+needs no typedef, and has the same size and alignment, so use it again.
+
+--- a/arch/arm64/include/uapi/asm/ptrace.h
++++ b/arch/arm64/include/uapi/asm/ptrace.h
+@@ -93,7 +93,7 @@
+ };
+ 
+ struct user_fpsimd_state {
+-	__u128		vregs[32];
++	__uint128_t	vregs[32];
+ 	__u32		fpsr;
+ 	__u32		fpcr;
+ 	__u32		__reserved[2];
+@@ -258,14 +258,14 @@
+ /* pointer authentication keys (NT_ARM_PACA_KEYS, NT_ARM_PACG_KEYS) */
+ 
+ struct user_pac_address_keys {
+-	__u128	apiakey;
+-	__u128	apibkey;
+-	__u128	apdakey;
+-	__u128	apdbkey;
++	__uint128_t	apiakey;
++	__uint128_t	apibkey;
++	__uint128_t	apdakey;
++	__uint128_t	apdbkey;
+ };
+ 
+ struct user_pac_generic_keys {
+-	__u128	apgakey;
++	__uint128_t	apgakey;
+ };
+ 
+ /* ZA state (NT_ARM_ZA) */
+--- a/arch/arm64/include/uapi/asm/sigcontext.h
++++ b/arch/arm64/include/uapi/asm/sigcontext.h
+@@ -78,7 +78,7 @@
+ 	struct _aarch64_ctx head;
+ 	__u32 fpsr;
+ 	__u32 fpcr;
+-	__u128 vregs[32];
++	__uint128_t vregs[32];
+ };
+ 
+ /*

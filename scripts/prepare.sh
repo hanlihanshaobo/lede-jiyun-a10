@@ -58,6 +58,28 @@ grep -q "^KERNEL_PATCHVER:=$KVER\$" "$RK_MK" || {
 }
 
 # ---------------------------------------------------------------------------
+# 0b. arm64 UAPI fix for 7.3
+#
+# 7.3 changed the 128-bit members of the arm64 UAPI to the __u128 typedef from
+# <linux/types.h>.  User space that reaches <asm/ptrace.h> through
+# <asm/bpf_perf_event.h> (libbpf does) then fails to build with
+#
+#   asm/ptrace.h:96:9: error: unknown type name '__u128'
+#
+# (the same change broke iptables/ebtables on 7.3, which bundle an old
+# linux/types.h).  This has to be a *generic* patch, not a target patch: the
+# toolchain kernel headers - the ones libbpf compiles against - are built with
+# the generic series only, before any target patch exists.
+# ---------------------------------------------------------------------------
+if [ "${KVER%%.*}" -ge 7 ] && [ -d "$LEDE/target/linux/generic/hack-$KVER" ]; then
+	say "install arm64 UAPI __u128 workaround"
+	install -m 0644 "$ROOT/kernel/patches/0001-arm64-uapi-uint128.patch" \
+		"$LEDE/target/linux/generic/hack-$KVER/0001-arm64-uapi-uint128.patch"
+else
+	say "no generic/hack-$KVER, skipping the arm64 UAPI workaround"
+fi
+
+# ---------------------------------------------------------------------------
 # 1. device tree
 # ---------------------------------------------------------------------------
 say "install device tree"

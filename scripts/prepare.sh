@@ -49,23 +49,25 @@ mkdir -p "$RK_PATCH_DIR"
 install -m 0644 "$ROOT/kernel/backport-6.18/910-rtl8365mb-led.patch" \
 	"$RK_PATCH_DIR/910-rtl8365mb-led.patch"
 
-# Experimental mt76 debugfs hook for the vendor MT7916 LED command
-# (CMDTHREAD_SET_LED_STATUS / Andes tag 0x17ed).  It lets us try the
-# vendor CID/payload through the mainline MCU path without rebuilding
-# for every CID.
+# MT7916 LED mux: when mt76 is built as an external module (OpenWrt),
+# CONFIG_MT76_LEDS is not set in the kernel config, so
+# mt7915_init_led_mux() bails out and the LED engine output never reaches
+# the module LED pins (the right-hand M.2 LED stays dark).  Drop that guard
+# and add a led_active_low module parameter (the A10's panel LED is wired
+# active low).
 #
 # NOTE: mt76 is NOT built from the kernel tree on this target: it comes
 # from the `mt76` package (github.com/openwrt/mt76, pinned in
 # package/kernel/mt76/Makefile) and only its own patches-6.18 directory
 # is applied.  Patching the kernel tree here has no effect.
-say "install mt76 vendor LED debugfs patch"
+say "install mt7916 LED mux patch"
 MT76_PATCH_DIR="$LEDE/package/kernel/mt76/patches-6.18"
 if [ ! -d "$MT76_PATCH_DIR" ]; then
 	echo "ERROR: $MT76_PATCH_DIR not found (mt76 package layout changed)" >&2
 	exit 1
 fi
-install -m 0644 "$ROOT/kernel/backport-6.18/920-mt76-vendor-led-debugfs.patch" \
-	"$MT76_PATCH_DIR/200-vendor-led-debugfs.patch"
+install -m 0644 "$ROOT/kernel/backport-6.18/200-mt7916-led-mux.patch" \
+	"$MT76_PATCH_DIR/200-mt7916-led-mux.patch"
 
 # ---------------------------------------------------------------------------
 # 2. device recipe (appended to armv8.mk, idempotent)
@@ -198,6 +200,12 @@ install -m 0755 "$ROOT/files/99-jiyun-resize" "$BASE/etc/uci-defaults/99-jiyun-r
 # LED defaults: left = wlan0 traffic, middle = sys (boot heartbeat -> solid),
 # right = wlan1/M.2 traffic.  Exposed in LuCI -> System -> LED Configuration.
 install -m 0755 "$ROOT/files/99-jiyun-led" "$BASE/etc/uci-defaults/99-jiyun-led"
+
+# The MT7916 panel LED is active low; mt7915e has a led_active_low module
+# parameter added by kernel/backport-6.18/200-mt7916-led-mux.patch.
+mkdir -p "$BASE/etc/modprobe.d"
+install -m 0644 "$ROOT/files/etc/modprobe.d/mt7915e.conf" \
+	"$BASE/etc/modprobe.d/mt7915e.conf"
 
 # LuCI overview: hide the DSA CPU/conduit port (eth0), show lan1-3/wan only.
 # This must go into the global files/ overlay (applied after all packages),

@@ -1,0 +1,26 @@
+diff --git a/mt7915/init.c b/mt7915/init.c
+--- a/mt7915/init.c
++++ b/mt7915/init.c
+@@ -584,11 +584,20 @@
+ 		mt76_set(dev, MT_AGG_ACR4(band), MT_AGG_ACR_PPDU_TXS2H);
+ }
+ 
++static bool led_active_low;
++module_param(led_active_low, bool, 0644);
++MODULE_PARM_DESC(led_active_low, "LED output is active low");
++
+ static void
+ mt7915_init_led_mux(struct mt7915_dev *dev)
+ {
+-	if (!IS_ENABLED(CONFIG_MT76_LEDS))
+-		return;
++	/* When mt76 is built as an external module (OpenWrt) the kernel
++	 * config symbol CONFIG_MT76_LEDS is not set, so this function used
++	 * to bail out early.  The LED mux still has to be programmed or the
++	 * LED engine output never reaches the module LED pins (MT7916 uses
++	 * MUX1 bits 27:24 and 31:28 with value 3).
++	 */
++	dev->mphy.leds.al = led_active_low;
+ 
+ 	if (dev->dbdc_support) {
+ 		switch (mt76_chip(&dev->mt76)) {

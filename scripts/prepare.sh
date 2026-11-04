@@ -49,6 +49,14 @@ mkdir -p "$RK_PATCH_DIR"
 install -m 0644 "$ROOT/kernel/backport-6.18/910-rtl8365mb-led.patch" \
 	"$RK_PATCH_DIR/910-rtl8365mb-led.patch"
 
+# Experimental mt76 debugfs hook for the vendor MT7916 LED command
+# (CMDTHREAD_SET_LED_STATUS / Andes tag 0x17ed).  It lets us try the
+# vendor CID/payload through the mainline MCU path without rebuilding
+# for every CID.
+say "install mt76 vendor LED debugfs patch"
+install -m 0644 "$ROOT/kernel/backport-6.18/920-mt76-vendor-led-debugfs.patch" \
+	"$RK_PATCH_DIR/920-mt76-vendor-led-debugfs.patch"
+
 # ---------------------------------------------------------------------------
 # 2. device recipe (appended to armv8.mk, idempotent)
 # ---------------------------------------------------------------------------

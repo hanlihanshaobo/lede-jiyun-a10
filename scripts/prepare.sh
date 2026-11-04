@@ -120,6 +120,38 @@ grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$
 }
 
 # ---------------------------------------------------------------------------
+# 4b. initrd support for the first-boot rootfs resize
+#
+# target/linux/rockchip/armv8/config-6.18 ships with BLK_DEV_INITRD disabled,
+# and the generic config disables RD_GZIP.  U-Boot does load the FIT ramdisk
+# and passes it via /chosen/linux,initrd-start/end (verified on the device:
+# start 0x0a200000, end 0x0a354934 == the 1,394,996 byte cpio.gz), but without
+# these two symbols the kernel silently ignores it and mounts the 256 MB
+# rootfs directly.  Enabling them lets /init run e2fsck/resize2fs on the
+# unmounted p1 before switch_root (see scripts/initramfs-init).
+# ---------------------------------------------------------------------------
+say "enable initrd support for the first-boot resize initramfs"
+RKCFG=$(ls "$LEDE"/target/linux/rockchip/*/config-6.18 2>/dev/null | head -1)
+if [ -z "$RKCFG" ]; then
+	RKCFG=$(ls "$LEDE"/target/linux/rockchip/*/config-6.* 2>/dev/null | head -1)
+fi
+[ -f "$RKCFG" ] || { echo "no target/linux/rockchip/*/config-6.* in $LEDE" >&2; exit 1; }
+
+sed \
+	-e 's/^# CONFIG_BLK_DEV_INITRD is not set/CONFIG_BLK_DEV_INITRD=y/' \
+	-e 's/^CONFIG_BLK_DEV_INITRD=.*/CONFIG_BLK_DEV_INITRD=y/' \
+	-e 's/^# CONFIG_RD_GZIP is not set/CONFIG_RD_GZIP=y/' \
+	-e 's/^CONFIG_RD_GZIP=.*/CONFIG_RD_GZIP=y/' \
+	"$RKCFG" > "$RKCFG.tmp" && mv "$RKCFG.tmp" "$RKCFG"
+for sym in CONFIG_BLK_DEV_INITRD CONFIG_RD_GZIP; do
+	grep -q "^$sym=y" "$RKCFG" || echo "$sym=y" >> "$RKCFG"
+done
+grep -E '^CONFIG_(BLK_DEV_INITRD|RD_GZIP)=y' "$RKCFG" || {
+	echo "ERROR: could not enable initrd support in $RKCFG" >&2
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
 # 5. drop generic patches that cannot apply here
 #
 # A generic patch that stops applying takes the whole build down inside

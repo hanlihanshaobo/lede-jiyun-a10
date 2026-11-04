@@ -2,54 +2,88 @@
 #
 # First-boot offline rootfs resize for the Jiyun A10.
 #
-# The flashed eMMC image contains a small ext4 inside the 7 GB p1.  The
-# kernel 6.18 online resize path cannot grow the make_ext4fs image past
+# The flashed eMMC image contains a small ext4 inside the full-size p1.
+# The kernel's online resize path cannot grow a make_ext4fs image past
 # ~377 MB (backup GDT layout), so this initramfs runs e2fsprogs *before*
 # the rootfs is mounted:
 #
 #   e2fsck -fy /dev/mmcblk0p1
 #   resize2fs /dev/mmcblk0p1        # no size -> p1 size, fully adaptive
 #
-# It then mounts p1 and switch_root()s into the real system.  A flag on the
-# rootfs makes subsequent boots skip the e2fsck/resize step.
+# It then mounts p1 read-write and switch_root()s into the real system.
+# /etc/.expanded records a successful resize so later boots skip this.
 
-/bin/busybox mount -t proc proc /proc
-/bin/busybox mount -t sysfs sys /sys
-/bin/busybox mount -t devtmpfs dev /dev 2>/dev/null || true
-
+BB=/bin/busybox
 ROOT=/dev/mmcblk0p1
+
+msg() { echo "jiyun-initramfs: $*" >/dev/console; }
+
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sys /sys
+$BB mount -t devtmpfs dev /dev 2>/dev/null || true
+$BB mkdir -p /mnt
+
 i=0
-while [ ! -b "$ROOT" ] && [ "$i" -lt 50 ]; do
-	/bin/busybox sleep 1
+while [ ! -b "$ROOT" ] && [ "$i" -lt 60 ]; do
+	$BB sleep 1
 	i=$((i + 1))
 done
+[ -b "$ROOT" ] || msg "$ROOT not found, trying anyway"
 
-/bin/busybox mkdir -p /mnt
-
-# Already expanded (flag on the rootfs)?  Skip the offline work.
-if /bin/busybox mount -o ro "$ROOT" /mnt 2>/dev/null; then
+# Already expanded (flag written after a successful resize)?  Mount
+# read-only first: on a clean fs this avoids a journal replay before the
+# flag check.
+if $BB mount -o ro "$ROOT" /mnt 2>/dev/null; then
 	if [ -f /mnt/etc/.expanded ]; then
-		/bin/busybox umount /mnt
-		/bin/busybox mount -o ro "$ROOT" /mnt
-		exec /bin/busybox switch_root /mnt /sbin/init
+		msg "rootfs already expanded, skipping resize"
+		$BB umount /mnt 2>/dev/null
+		if $BB mount -o rw "$ROOT" /mnt 2>/dev/null; then
+			exec $BB switch_root /mnt /sbin/init
+		fi
 	fi
-	/bin/busybox umount /mnt
+	# resize2fs needs p1 fully unmounted
+	j=0
+	while ! $BB umount /mnt 2>/dev/null; do
+		j=$((j + 1))
+		[ "$j" -ge 10 ] && break
+		$BB sleep 1
+	done
+else
+	msg "rootfs not mountable read-only, running fsck anyway"
 fi
 
-# Offline resize: p1 is not mounted here.
 if [ -x /sbin/e2fsck ]; then
-	/sbin/e2fsck -fy "$ROOT" >/dev/console 2>&1 || true
+	msg "e2fsck -fy $ROOT"
+	/sbin/e2fsck -fy "$ROOT" >/dev/console 2>&1
+	rc=$?
+	[ "$rc" -le 1 ] || msg "e2fsck returned $rc"
+else
+	msg "e2fsck missing from initramfs"
 fi
+
+resized=0
 if [ -x /sbin/resize2fs ]; then
-	/sbin/resize2fs "$ROOT" >/dev/console 2>&1 || true
+	msg "resize2fs $ROOT"
+	if /sbin/resize2fs "$ROOT" >/dev/console 2>&1; then
+		resized=1
+	fi
+else
+	msg "resize2fs missing from initramfs"
 fi
 
-# Record the flag (best effort) and hand over to the real rootfs.
-if /bin/busybox mount -o rw "$ROOT" /mnt 2>/dev/null; then
-	/bin/busybox touch /mnt/etc/.expanded
-	/bin/busybox sync
-	/bin/busybox umount /mnt
+# Hand over to the real rootfs, read-write like a normal root= mount.
+j=0
+while ! $BB mount -o rw "$ROOT" /mnt 2>/dev/null; do
+	j=$((j + 1))
+	[ "$j" -ge 10 ] && break
+	$BB sleep 1
+done
+
+if [ -d /mnt/etc ]; then
+	[ "$resized" = 1 ] && $BB touch /mnt/etc/.expanded
+	$BB sync
+	exec $BB switch_root /mnt /sbin/init
 fi
 
-/bin/busybox mount -o ro "$ROOT" /mnt
-exec /bin/busybox switch_root /mnt /sbin/init
+msg "cannot mount $ROOT, dropping to shell"
+exec $BB sh

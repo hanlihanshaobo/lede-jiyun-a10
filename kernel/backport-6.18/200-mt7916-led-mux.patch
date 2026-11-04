@@ -24,3 +24,27 @@ diff --git a/mt7915/init.c b/mt7915/init.c
  
  	if (dev->dbdc_support) {
  		switch (mt76_chip(&dev->mt76)) {
+@@ -604,6 +613,7 @@
+ 			mt76_rmw_field(dev, MT_LED_GPIO_MUX0,
+ 				       GENMASK(11, 8), 1);
+ 			break;
++		case 0x7906:
+ 		case 0x7916:
+ 			mt76_rmw_field(dev, MT_LED_GPIO_MUX1,
+ 				       GENMASK(27, 24), 3);
+@@ -623,6 +633,7 @@
+ 			mt76_rmw_field(dev, MT_LED_GPIO_MUX0,
+ 				       GENMASK(11, 8), 1);
+ 			break;
++		case 0x7906:
+ 		case 0x7916:
+ 			mt76_rmw_field(dev, MT_LED_GPIO_MUX1,
+ 				       GENMASK(31, 28), 3);
+@@ -640,6 +651,7 @@
+ 			mt76_rmw_field(dev, MT_LED_GPIO_MUX0,
+ 				       GENMASK(7, 4), 1);
+ 			break;
++		case 0x7906:
+ 		case 0x7916:
+ 			mt76_rmw_field(dev, MT_LED_GPIO_MUX1,
+ 				       GENMASK(27, 24), 3);

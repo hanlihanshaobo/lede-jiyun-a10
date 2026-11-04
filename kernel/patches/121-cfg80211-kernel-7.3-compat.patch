@@ -1,0 +1,51 @@
+From: Jiyun A10 build <noreply@localhost>
+Subject: [PATCH] cfg80211: build against kernel 7.3
+
+Two kernel API changes break backports 6.18.39 on 7.3:
+
+ - mac_pton() moved from <linux/string.h> to <linux/hex.h>, so the
+   macaddress_store() added by 120-cfg80211_allow_perm_addr_change.patch
+   fails with "implicit declaration of function 'mac_pton'".
+
+ - struct class.namespace changed from "const void *(*)(...)" to
+   "const struct ns_common *(*)(...)" (the 7.3 namespace rework), so
+   .namespace = wiphy_namespace no longer type checks.
+
+Take the same shape backports 7.2 uses (to_ns_common()), guarded by the
+kernel version so the 6.18 build is unaffected.
+
+--- a/net/wireless/sysfs.c
++++ b/net/wireless/sysfs.c
+@@ -13,6 +13,10 @@
+ #include <linux/netdevice.h>
+ #include <linux/nl80211.h>
+ #include <linux/rtnetlink.h>
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include <linux/hex.h>
++#include <linux/version.h>
++#endif
+ #include <net/cfg80211.h>
+ #include "sysfs.h"
+ #include "core.h"
+@@ -171,12 +175,21 @@
+ #define WIPHY_PM_OPS NULL
+ #endif
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++static const struct ns_common *wiphy_namespace(const struct device *d)
++{
++	struct wiphy *wiphy = container_of(d, struct wiphy, dev);
++
++	return to_ns_common(wiphy_net(wiphy));
++}
++#else
+ static const void *wiphy_namespace(const struct device *d)
+ {
+ 	struct wiphy *wiphy = container_of(d, struct wiphy, dev);
+ 
+ 	return wiphy_net(wiphy);
+ }
++#endif
+ 
+ struct class ieee80211_class = {
+ 	.name = "ieee80211",

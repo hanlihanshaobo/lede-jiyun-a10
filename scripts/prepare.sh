@@ -173,6 +173,29 @@ install -m 0644 "$ROOT/kernel/patches/200-mt7916-led-mux.patch" \
 	"$MT76_PATCH_DIR/200-mt7916-led-mux.patch"
 
 # ---------------------------------------------------------------------------
+# 1c. cfg80211 (mac80211 backports) for 7.3
+#
+# backports 6.18.39 does not build against 7.3: mac_pton() moved to
+# <linux/hex.h> (the macaddress_store() from LEDE's own 120- patch calls it)
+# and struct class.namespace now returns "const struct ns_common *".  Install a
+# small compat patch next to LEDE's subsys series; it is guarded by
+# LINUX_VERSION_CODE so the 6.18 build is unaffected.
+#
+# PATCH_DIR is patches/ for the regular variant (the one this board builds);
+# patches-qualcommbe/ is only used for the qualcommbe variant.
+# ---------------------------------------------------------------------------
+if [ "${KVER%%.*}" -ge 7 ]; then
+	say "install cfg80211 7.3 compat patch"
+	CFG_PATCH_DIR="$LEDE/package/kernel/mac80211/patches/subsys"
+	[ -d "$CFG_PATCH_DIR" ] || {
+		echo "ERROR: $CFG_PATCH_DIR not found (mac80211 layout changed)" >&2
+		exit 1
+	}
+	install -m 0644 "$ROOT/kernel/patches/121-cfg80211-kernel-7.3-compat.patch" \
+		"$CFG_PATCH_DIR/121-cfg80211-kernel-7.3-compat.patch"
+fi
+
+# ---------------------------------------------------------------------------
 # 2. device recipe (appended to armv8.mk, idempotent)
 # ---------------------------------------------------------------------------
 say "append device recipe to armv8.mk"

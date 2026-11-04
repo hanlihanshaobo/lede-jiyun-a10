@@ -5,7 +5,7 @@
 # managed from LuCI (System -> LED Configuration):
 #
 #   wlan  (left)  gpio4 C5,  netdev trigger on wlan0  -> blinks with 2.4G traffic
-#   sys   (middle) gpio0 PC4, heartbeat while booting -> rc.local makes it solid
+#   sys   (middle) gpio0 PC4, DTS heartbeat for boot, S96led then sets default-on
 #   m2    (right) mt76-phy1,  netdev trigger on wlan1 -> blinks with 5G/M.2 traffic
 #
 # /etc/init.d/led applies this config early; rc.local re-applies it once the
@@ -26,7 +26,7 @@ set system.led_wlan.mode='tx rx'
 set system.led_sys='led'
 set system.led_sys.name='sys'
 set system.led_sys.sysfs='sys'
-set system.led_sys.trigger='heartbeat'
+set system.led_sys.trigger='default-on'
 
 set system.led_m2='led'
 set system.led_m2.name='m2'

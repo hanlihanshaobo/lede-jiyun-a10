@@ -28,7 +28,8 @@ tools/mkfit.py                  repack kernel+DTB into the stock (data-position)
 tools/mk-spi-img.py             loader + u-boot + FIT -> SPI NOR flashing image
 tools/extract_stock_eeprom.py   pull the EEPROM out of a SPI NOR backup
 tools/rkdeveloptool             macOS build
-kernel/                         RTL8367S swconfig driver sources (reference only, NOT injected - DSA runs)
+kernel/patches/                 our kernel patches (RTL8367S LED regs, MT7916 LED mux);
+                                900-net-phy-add-rtl8367s is reference only, NOT injected - DSA runs
 ```
 
 ## Local build
@@ -121,7 +122,8 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
 | SoC | Rockchip RK3568B2 (4x Cortex-A55) |
 | DRAM | ~2 GB |
 | Boot | SPI NOR W25Q256JW 32 MB — `Kernel` partition holds a FIT (kernel + DTB) |
-| Rootfs | eMMC `mmcblk0p1` (ext4), 256 MB image; the first-boot online resize aborts at 377.8 MB on kernel 6.18 (`make_ext4fs` GDT layout) — use the top-level `scripts/expand_emmc_offline.sh` (offline resize + p1 stream) until the image recipe is fixed |
+| Kernel | Linux 7.3.1 (`KERNEL_PATCHVER:=7.3`; upstream still ships rockchip on 6.18, so `prepare.sh` bumps the target and seeds `patches-7.3`) |
+| Rootfs | eMMC `mmcblk0p1` (ext4), 256 MB image; the first-boot online resize aborts at 377.8 MB on kernel 6.18 (`make_ext4fs` GDT layout, not re-checked on 7.3) — use the top-level `scripts/expand_emmc_offline.sh` (offline resize + p1 stream) until the image recipe is fixed |
 | Switch | Realtek RTL8367S, MDIO 0x1d, CPU port 7, driven by `kmod-dsa-rtl8365mb` |
 | Ports | LAN = switch ports 0/1/3, WAN = port 4 (port 2 unpopulated) |
 | WiFi | MediaTek MT7916 x2 (PCIe `01:00.0` = 2.4G, `02:00.0` = 5G) |
@@ -142,13 +144,18 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
   emits `data-offset`, hence `tools/mkfit.py` patches the stock header.
 - **eMMC rootfs expansion**: the 256 MB rootfs is created by `make_ext4fs` with only
   15 reserved GDT blocks, so the kernel 6.18 online resize aborts at 377.8 MB with
-  `reserve_backup_gdb: reserved block 16 not at offset 15`. Use the top-level
-  `scripts/expand_emmc_offline.sh` (offline `resize2fs` + stream to `mmcblk0p1`,
-  MBR untouched); a 7 GB rootfs image or an initramfs offline resize is the
-  long-term fix. `mke2fs` only reserves 4 GB online, so it is not enough for 7 GB.
-- **Kernel config fragments**: `target/linux/generic/config-6.18` disables
-  `NET_DSA`/`NET_SWITCHDEV`/RTL8366 symbols, so `scripts/prepare.sh` flips them.
-  `NET_DSA`/`NET_SWITCHDEV`/RTL8366 symbols, so the workflow `sed`s them out.
+  `reserve_backup_gdb: reserved block 16 not at offset 15` (7.3 not re-checked
+  yet). Use the top-level `scripts/expand_emmc_offline.sh` (offline `resize2fs` +
+  stream to `mmcblk0p1`, MBR untouched); a 7 GB rootfs image or an initramfs
+  offline resize is the long-term fix. `mke2fs` only reserves 4 GB online, so it
+  is not enough for 7 GB.
+- **Kernel config fragments**: `target/linux/generic/config-<ver>` disables
+  `NET_DSA`/`NET_SWITCHDEV`/`NET_DSA_REALTEK*` symbols, so `scripts/prepare.sh`
+  flips them (it also has to append `NET_DSA_REALTEK_MDIO`, which is not in the
+  7.3 fragment at all).
+- **Rockchip target patches**: upstream has no `target/linux/rockchip/patches-7.3`
+  yet, so `prepare.sh` seeds it from `patches-6.18` and skips the five patches
+  that do not apply to 7.3.1 (listed in the script). Our own patches go on top.
 - **BTF must be off** (`# CONFIG_KERNEL_DEBUG_INFO_BTF is not set`), otherwise
   `cfg80211` fails module BTF validation and the whole wireless stack refuses to
   load.

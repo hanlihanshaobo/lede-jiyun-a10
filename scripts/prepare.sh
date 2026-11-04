@@ -27,6 +27,37 @@ LEDE="$(cd "$LEDE" 2>/dev/null && pwd)" || { echo "no such directory: $1" >&2; e
 say() { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------------------
+# 0. kernel series
+#
+# Upstream ships 7.3 as the *testing* series and still keeps rockchip on 6.18
+# (KERNEL_PATCHVER in target/linux/rockchip/Makefile).  This board is built on
+# 7.3, so bump the target here; every path below derives from $KVER instead of
+# hardcoding a series, so the next bump is this one variable.
+#
+# Override with JIYUN_KVER=6.18 to build the old series again (the 6.18 tree
+# then needs the MxL862xx patch-series workaround that used to live in this
+# script - see the git history for "drop patches for hardware this board does
+# not have").
+# ---------------------------------------------------------------------------
+KVER="${JIYUN_KVER:-7.3}"
+say "target kernel series: $KVER"
+
+if [ ! -f "$LEDE/include/kernel-$KVER" ]; then
+	echo "ERROR: upstream tree has no include/kernel-$KVER - pin a newer LEDE_REF" >&2
+	exit 1
+fi
+
+RK_MK="$LEDE/target/linux/rockchip/Makefile"
+if ! grep -q "^KERNEL_PATCHVER:=$KVER\$" "$RK_MK"; then
+	sed "s/^KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=$KVER/" "$RK_MK" > "$RK_MK.tmp" &&
+		mv "$RK_MK.tmp" "$RK_MK"
+fi
+grep -q "^KERNEL_PATCHVER:=$KVER\$" "$RK_MK" || {
+	echo "ERROR: could not set KERNEL_PATCHVER:=$KVER in $RK_MK" >&2
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
 # 1. device tree
 # ---------------------------------------------------------------------------
 say "install device tree"
@@ -43,10 +74,47 @@ install -m 0644 "$ROOT/files/rk3568-jiyun-a10.dts" "$DTS_DIR/rk3568-jiyun-a10.dt
 # 0x1b24=0x1f1f (groups 0/1 -> ports 0-4) and enabled OCP 0xa442 bit 5 on each
 # PHY.  Carry the same setup as a small kernel patch.
 # ---------------------------------------------------------------------------
+# Upstream still only ships target/linux/rockchip/patches-6.18. When the
+# directory for the kernel being built does not exist yet, seed it from that
+# series minus the patches that do not apply to the newer kernel. Verified with
+# `patch -p1 --dry-run` against linux-7.3.1:
+#
+#   0130-net-dsa-add-motorcomm-yt921x   DSA tag ids sit next to the MxL862
+#                                      ones; that switch is not on this board
+#   039-1-...inno-usb2-Simplify...      already upstream in 7.3
+#   106-nanopi-r4s-sd-power-cycle       R4S DTS changed upstream
+#   113-...stmmac-SGMII-QSGMII          6/14 hunks, not this board
+#   700-...stmmac-disable-VLAN-hw-filter include/linux/stmmac.h moved
+#
+# Once upstream adds patches-$KVER the copy is skipped and only the patches
+# installed below are added on top.
+RK_PATCH_DIR="$LEDE/target/linux/rockchip/patches-$KVER"
+if [ -d "$RK_PATCH_DIR" ]; then
+	say "target patch dir $RK_PATCH_DIR (upstream)"
+else
+	say "seed $RK_PATCH_DIR from patches-6.18"
+	SRC_PATCH_DIR="$LEDE/target/linux/rockchip/patches-6.18"
+	[ -d "$SRC_PATCH_DIR" ] || {
+		echo "ERROR: neither patches-$KVER nor patches-6.18 in $LEDE/target/linux/rockchip" >&2
+		exit 1
+	}
+	mkdir -p "$RK_PATCH_DIR"
+	shopt -s nullglob
+	for f in "$SRC_PATCH_DIR"/*.patch; do
+		case "$(basename "$f")" in
+		0130-*|039-1-*|106-nanopi-r4s-sd-power-cycle*|113-*|700-*)
+			echo "skipping $(basename "$f") (does not apply to $KVER)"
+			;;
+		*)
+			cp "$f" "$RK_PATCH_DIR/"
+			;;
+		esac
+	done
+	shopt -u nullglob
+fi
+
 say "install rtl8365mb LED patch"
-RK_PATCH_DIR="$LEDE/target/linux/rockchip/patches-6.18"
-mkdir -p "$RK_PATCH_DIR"
-install -m 0644 "$ROOT/kernel/backport-6.18/910-rtl8365mb-led.patch" \
+install -m 0644 "$ROOT/kernel/patches/910-rtl8365mb-led.patch" \
 	"$RK_PATCH_DIR/910-rtl8365mb-led.patch"
 
 # MT7916 LED mux: when mt76 is built as an external module (OpenWrt),
@@ -58,15 +126,27 @@ install -m 0644 "$ROOT/kernel/backport-6.18/910-rtl8365mb-led.patch" \
 #
 # NOTE: mt76 is NOT built from the kernel tree on this target: it comes
 # from the `mt76` package (github.com/openwrt/mt76, pinned in
-# package/kernel/mt76/Makefile) and only its own patches-6.18 directory
-# is applied.  Patching the kernel tree here has no effect.
+# package/kernel/mt76/Makefile) and only its own patch directory is applied.
+# Patching the kernel tree here has no effect.
+#
+# The package picks that directory from the kernel config: 6.12 and newer
+# (including 7.3) use the "else" branch, which is patches-6.18 today.  Look
+# for a series matching the kernel first so a future package bump that adds
+# patches-$KVER is picked up automatically.
 say "install mt7916 LED mux patch"
-MT76_PATCH_DIR="$LEDE/package/kernel/mt76/patches-6.18"
-if [ ! -d "$MT76_PATCH_DIR" ]; then
-	echo "ERROR: $MT76_PATCH_DIR not found (mt76 package layout changed)" >&2
+MT76_PATCH_DIR=
+for cand in "patches-$KVER" patches-6.18 patches-6.x; do
+	if [ -d "$LEDE/package/kernel/mt76/$cand" ]; then
+		MT76_PATCH_DIR="$LEDE/package/kernel/mt76/$cand"
+		break
+	fi
+done
+if [ -z "$MT76_PATCH_DIR" ]; then
+	echo "ERROR: no usable patch dir in $LEDE/package/kernel/mt76 (layout changed)" >&2
 	exit 1
 fi
-install -m 0644 "$ROOT/kernel/backport-6.18/200-mt7916-led-mux.patch" \
+echo "mt76 patch dir: ${MT76_PATCH_DIR#$LEDE/}"
+install -m 0644 "$ROOT/kernel/patches/200-mt7916-led-mux.patch" \
 	"$MT76_PATCH_DIR/200-mt7916-led-mux.patch"
 
 # ---------------------------------------------------------------------------
@@ -89,9 +169,9 @@ install -m 0755 "$ROOT/files/mk-emmc-img.py" "$LEDE/scripts/mk-emmc-img.py"
 # ---------------------------------------------------------------------------
 # 4. kernel config fragment
 #
-# target/linux/generic/config-6.x sets the DSA core to "not set", which
-# overrides .config and leaves every switch port dead. Flip exactly the four
-# DSA symbols.
+# target/linux/generic/config-<ver> sets the DSA core to "not set", which
+# overrides .config and leaves every switch port dead. Flip exactly the DSA
+# symbols.
 #
 # The swconfig trio (SWCONFIG / RTL8366_SMI / RTL8367B_PHY) is deliberately not
 # touched: the board runs the mainline DSA driver (kmod-dsa-rtl8365mb, see the
@@ -102,84 +182,51 @@ install -m 0755 "$ROOT/files/mk-emmc-img.py" "$LEDE/scripts/mk-emmc-img.py"
 # bump and was a standing "does not apply" risk.
 # ---------------------------------------------------------------------------
 say "enable DSA in the generic kernel config"
-KCFG="$LEDE/target/linux/generic/config-6.18"
+KCFG="$LEDE/target/linux/generic/config-$KVER"
 if [ ! -f "$KCFG" ]; then
-	KCFG=$(ls "$LEDE"/target/linux/generic/config-6.* 2>/dev/null | head -1)
+	KCFG=$(ls "$LEDE"/target/linux/generic/config-[0-9]* 2>/dev/null | head -1)
 fi
-[ -f "$KCFG" ] || { echo "no target/linux/generic/config-6.* in $LEDE" >&2; exit 1; }
+[ -f "$KCFG" ] || { echo "no target/linux/generic/config-* in $LEDE" >&2; exit 1; }
 
-sed \
-	-e 's/^# CONFIG_NET_SWITCHDEV is not set/CONFIG_NET_SWITCHDEV=y/' \
-	-e 's/^# CONFIG_NET_DSA is not set/CONFIG_NET_DSA=y/' \
-	-e 's/^# CONFIG_NET_DSA_REALTEK is not set/CONFIG_NET_DSA_REALTEK=m/' \
-	-e 's/^# CONFIG_NET_DSA_TAG_RTL8_4 is not set/CONFIG_NET_DSA_TAG_RTL8_4=m/' \
-	"$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
-grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_TAG_RTL8_4)=' "$KCFG" || {
+# Set a symbol whether the fragment currently says "is not set" or does not
+# mention it at all. A plain sed only works while upstream keeps writing the
+# "is not set" line; NET_DSA_REALTEK_MDIO already disappeared from config-7.3
+# (the 7.3 driver split), so append as a fallback.
+enable_sym() {
+	local sym="$1" val="$2"
+	sed -e "/^# CONFIG_${sym} is not set\$/d" -e "/^CONFIG_${sym}=/d" \
+		"$KCFG" > "$KCFG.tmp" && mv "$KCFG.tmp" "$KCFG"
+	printf 'CONFIG_%s=%s\n' "$sym" "$val" >> "$KCFG"
+}
+
+enable_sym NET_SWITCHDEV y
+enable_sym NET_DSA y
+enable_sym NET_DSA_REALTEK m
+# 7.3 split the Realtek DSA driver: realtek_dsa.ko carries the core, the
+# RTL8365MB subdriver and the MDIO transport are separate objects. The board
+# talks to the RTL8367S over MDIO (see the DTS), so that transport is required.
+enable_sym NET_DSA_REALTEK_MDIO y
+enable_sym NET_DSA_TAG_RTL8_4 m
+
+grep -E '^CONFIG_(NET_DSA|NET_SWITCHDEV|NET_DSA_REALTEK|NET_DSA_REALTEK_MDIO|NET_DSA_TAG_RTL8_4)=' "$KCFG" || {
 	echo "ERROR: could not enable DSA in $KCFG" >&2
 	exit 1
 }
 
 # ---------------------------------------------------------------------------
-# 5. drop generic patches that cannot apply here
+# 5. generic patch series
 #
-# A generic patch that stops applying takes the whole build down inside
-# toolchain/kernel-headers, ~30 minutes in, before anything board specific is
-# compiled (#47-#51). LEDE master moves daily, so build.yml pins the tree; this
-# is the list of series that still has to go because the hardware is not on
-# this board.
+# 6.18 needed the MxL862xx series dropped: it stopped applying and took the
+# kernel-headers step down ~30 minutes into the build (#47-#52), and its DSA
+# tag ids were load bearing for target patch 0130.
 #
-# The MxL862xx switch spans BOTH generic series: backport-6.18 carries the
-# driver (762/764-780) and pending-6.18 the follow-ups (760-0x) that patch the
-# files the backport creates. Dropping one half only moves the error one patch
-# down the list (#49 -> #50 -> #51), so both halves go, matched by name and
-# then by the directory they touch.
-#
-# The series is also load bearing for other patches: target/linux/rockchip/
-# patches-6.18/0130 (Motorcomm YT921x) inserts its DSA tag numbers *after* the
-# MXL862 defines, so it cannot apply once the series is gone (#52). That driver
-# is not on this board either, so anything still referring to it goes too.
+# The 7.3 series imported in LEDE f61f09e is self-consistent (upstream
+# replayed it with zero fuzz) and applies as shipped, so nothing is removed
+# here - dropping half of it would break the 795-0x mtk_ppe patches that
+# reference the MxL862xx tag ids. If a future pin breaks a generic patch, the
+# "Preflight kernel patches" CI step reports it in minutes.
 # ---------------------------------------------------------------------------
-say "drop patches for hardware this board does not have"
-shopt -s nullglob
-
-KVER="${KCFG##*config-}"
-BP_DIR="$LEDE/target/linux/generic/backport-$KVER"
-[ -d "$BP_DIR" ] || BP_DIR=$(ls -d "$LEDE"/target/linux/generic/backport-6.* | tail -1)
-# derived from BP_DIR, not KVER, so the pair stays in step when the fallback
-# above picks a different series
-PEND_DIR="${BP_DIR%backport-*}pending-${BP_DIR##*backport-}"
-echo "generic patch dirs: $BP_DIR $PEND_DIR"
-
-for d in "$BP_DIR" "$PEND_DIR"; do
-	for f in "$d"/*[mM]x[lL]862xx*.patch; do
-		echo "removing $(basename "$d")/$(basename "$f") (MxL862xx DSA series; not on this board)"
-		rm -f "$f"
-	done
-	# a follow-up patch may not carry "mxl" in its file name but still edits
-	# drivers/net/dsa/mxl862xx/ -> "No file to patch" once the driver is gone
-	for f in "$d"/*.patch; do
-		if grep -qE '^(\+\+\+|---) [ab]/drivers/net/dsa/mxl862xx/' "$f"; then
-			echo "removing $(basename "$d")/$(basename "$f") (touches the mxl862xx driver)"
-			rm -f "$f"
-		fi
-	done
-done
-
-# target patches that only made sense on top of the removed series: 0130
-# (Motorcomm YT921x) adds DSA_TAG_PROTO_YT921X right after the MXL862 tag
-# values, so both of its include/net/dsa.h hunks are rejected once they are
-# gone. Match on the dependency, not on the file name, so a rebased/renamed
-# patch is caught as well.
-RK_PDIR="$LEDE/target/linux/rockchip/patches-$KVER"
-[ -d "$RK_PDIR" ] || RK_PDIR=$(ls -d "$LEDE"/target/linux/rockchip/patches-6.* 2>/dev/null | tail -1)
-if [ -n "${RK_PDIR:-}" ] && [ -d "$RK_PDIR" ]; then
-	for f in "$RK_PDIR"/*.patch; do
-		if grep -q 'MXL862' "$f"; then
-			echo "removing $(basename "$RK_PDIR")/$(basename "$f") (context depends on the MxL862xx tag ids)"
-			rm -f "$f"
-		fi
-	done
-fi
+say "generic patch series: using upstream as shipped"
 
 # ---------------------------------------------------------------------------
 # 6. rootfs overlay (target base-files)
@@ -203,7 +250,7 @@ install -m 0755 "$ROOT/files/99-jiyun-led" "$BASE/etc/uci-defaults/99-jiyun-led"
 
 # The MT7916 panel LED is active low and its blink has to come from the LED
 # core (the MT7916 hardware blink engine is irregular); both are module
-# parameters added by kernel/backport-6.18/200-mt7916-led-mux.patch.
+# parameters added by kernel/patches/200-mt7916-led-mux.patch.
 mkdir -p "$BASE/etc/modprobe.d"
 install -m 0644 "$ROOT/files/etc/modprobe.d/mt7915e.conf" \
 	"$BASE/etc/modprobe.d/mt7915e.conf"

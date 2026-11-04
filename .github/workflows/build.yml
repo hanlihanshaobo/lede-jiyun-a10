@@ -18,7 +18,7 @@ on:
       lede_ref:
         description: "Upstream branch/tag/commit (branch or 40-char sha)"
         required: false
-        default: "cc4d5400d29734c1133423b1e45258fcb0dddf8d"
+        default: "f61f09e850959d490c1b43a7eb20eefd46224d4f"
   push:
     branches: [main]
     paths-ignore:
@@ -35,11 +35,12 @@ concurrency:
 env:
   LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
   # Pinned to the last upstream tree that built: LEDE master moves daily and
-  # backports in target/linux/generic/{backport,pending}-6.18 keep breaking the
-  # kernel-headers step (#47-#51). prepare.sh still has to drop the patch
-  # series for hardware this board does not have - see the comment there.
+  # generic backports keep breaking the kernel-headers step (#47-#51).
+  # f61f09e is "generic: port Linux kernel 7.3 support" (kernel 7.3.1); the
+  # rockchip target is still on 6.18 upstream, so prepare.sh bumps its
+  # KERNEL_PATCHVER and seeds target/linux/rockchip/patches-7.3.
   # Pass "master" manually to track upstream, and expect new breakage.
-  LEDE_REF: ${{ github.event.inputs.lede_ref || 'cc4d5400d29734c1133423b1e45258fcb0dddf8d' }}
+  LEDE_REF: ${{ github.event.inputs.lede_ref || 'f61f09e850959d490c1b43a7eb20eefd46224d4f' }}
   # push / schedule build both packages for now, to get a complete set into the
   # latest release; switch the fallback to 'emmc' once the SPI package is
   # validated, since only the rootfs gets iterated on afterwards.
@@ -472,7 +473,9 @@ jobs:
   # -------------------------------------------------------------------------
   release:
     needs: [build, pack-emmc, pack-spi]
-    if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
+    # main only: a workflow_dispatch run on a topic branch must never overwrite
+    # the rolling "latest" firmware with an unvalidated kernel.
+    if: ${{ always() && !cancelled() && needs.build.result == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write

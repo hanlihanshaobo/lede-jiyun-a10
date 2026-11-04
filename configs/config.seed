@@ -3,7 +3,7 @@
 # "make defconfig" drops them silently, so listing them here only created the
 # illusion that they were set. The DSA core is enabled where the kernel config
 # is actually generated - scripts/prepare.sh edits
-# target/linux/generic/config-6.18.
+# target/linux/generic/config-<kernel series>.
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_armv8=y
 CONFIG_TARGET_rockchip_armv8_DEVICE_jiyun_a10=y

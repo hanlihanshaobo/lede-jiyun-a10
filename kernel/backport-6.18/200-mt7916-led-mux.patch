@@ -5,7 +5,7 @@ diff --git a/mt7915/init.c b/mt7915/init.c
  		mt76_set(dev, MT_AGG_ACR4(band), MT_AGG_ACR_PPDU_TXS2H);
  }
  
-+static bool led_active_low;
++static bool led_active_low = true;
 +module_param(led_active_low, bool, 0644);
 +MODULE_PARM_DESC(led_active_low, "LED output is active low");
 +

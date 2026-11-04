@@ -261,6 +261,7 @@ jobs:
           exit 1
 
       - name: Build
+        timeout-minutes: 330
         run: |
           cd lede
           set -o pipefail
@@ -273,7 +274,13 @@ jobs:
           fi
 
           echo "::warning::parallel build failed, retrying serially for a readable error"
-          make -j1 V=s 2>&1 | tee /tmp/build-serial.log || true
+          # The parallel build can lose a race in one package and still leave a
+          # perfectly good tree.  Honour a successful serial retry instead of
+          # failing the job (and throwing away the images) unconditionally.
+          if make -j1 V=s 2>&1 | tee /tmp/build-serial.log; then
+            echo "::notice::serial retry succeeded"
+            exit 0
+          fi
 
           {
             echo "### build failed"

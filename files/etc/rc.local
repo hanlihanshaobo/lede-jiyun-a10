@@ -10,12 +10,31 @@ done
 # Per-unit WLAN MACs (must run after the first-boot "wifi config").
 sh /etc/jiyun-mac.sh 2>/dev/null
 
-# Re-apply the LED config now that wlan0/wlan1 exist, then make the middle
-# system LED solid: heartbeat is only the boot indicator.  Leave the LED alone
-# if the user picked a different trigger in LuCI.
-/etc/init.d/led restart >/dev/null 2>&1
-if [ "$(uci -q get system.led_sys.trigger)" = "heartbeat" ]; then
-	[ -e /sys/class/leds/sys/trigger ] && echo default-on > /sys/class/leds/sys/trigger
-fi
+# S96led runs after this script, and the gpio LEDs on this board can still be
+# (re)registered late, leaving "none"/"heartbeat" behind.  Once the system has
+# settled, wait for wlan1, re-apply the LED config and enable the netdev tx/rx
+# modes (the UCI "mode" option is applied too early for wlan1).
+(
+	sleep 8
+
+	i=0
+	while [ $i -lt 30 ] && [ ! -d /sys/class/net/wlan1 ]; do
+		i=$((i + 1))
+		sleep 1
+	done
+
+	/etc/init.d/led restart >/dev/null 2>&1
+
+	# heartbeat is only the boot indicator; keep the middle LED solid.
+	if [ "$(uci -q get system.led_sys.trigger)" = "heartbeat" ]; then
+		[ -e /sys/class/leds/sys/trigger ] && echo default-on > /sys/class/leds/sys/trigger
+	fi
+
+	for l in wlan mt76-phy1; do
+		for m in tx rx; do
+			[ -e "/sys/class/leds/$l/$m" ] && echo 1 > "/sys/class/leds/$l/$m"
+		done
+	done
+) &
 
 exit 0

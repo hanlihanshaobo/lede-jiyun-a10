@@ -5,10 +5,10 @@
 #   right (mt76-phy1) : whatever is plugged into the M.2 slot
 #                       (block devices / netdevs below 3c0800000.pcie)
 #
-# Both LEDs use the kernel "timer" trigger while there is traffic and are
-# switched off after a short idle period.  mt7915e runs with led_sw_blink=1,
-# so the LED core (not the MT7916 hardware blink engine) does the blinking
-# and both sides stay in sync.
+# Left uses the kernel "timer" trigger at 2 Hz while wlan0/wlan1 has traffic.
+# Right is switched between "default-on" and off: the MT7916 LED engine blinks
+# on its own at roughly 2 Hz in the on state, which is close enough to the
+# left side (the engine does not follow the requested delay exactly).
 
 LEFT=wlan
 RIGHT=mt76-phy1
@@ -23,8 +23,18 @@ led_blink() {
 	esac
 	echo none > /sys/class/leds/$l/trigger 2>/dev/null
 	echo timer > /sys/class/leds/$l/trigger 2>/dev/null
-	echo 500 > /sys/class/leds/$l/delay_on 2>/dev/null
-	echo 500 > /sys/class/leds/$l/delay_off 2>/dev/null
+	echo 250 > /sys/class/leds/$l/delay_on 2>/dev/null
+	echo 250 > /sys/class/leds/$l/delay_off 2>/dev/null
+}
+
+led_on() {
+	local l=$1
+	[ -e /sys/class/leds/$l/trigger ] || return 1
+	case "$(cat /sys/class/leds/$l/trigger 2>/dev/null)" in
+		*"[default-on]"*) return 0 ;;
+	esac
+	echo none > /sys/class/leds/$l/trigger 2>/dev/null
+	echo default-on > /sys/class/leds/$l/trigger 2>/dev/null
 }
 
 led_off() {
@@ -126,7 +136,7 @@ while true; do
 	cur=$(m2_sig)
 	if [ "$cur" != "$last_r" ]; then
 		idle_r=0
-		if [ "$state_r" != 1 ] && led_blink "$RIGHT"; then
+		if [ "$state_r" != 1 ] && led_on "$RIGHT"; then
 			state_r=1
 		fi
 	else

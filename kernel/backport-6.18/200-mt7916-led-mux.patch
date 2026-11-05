@@ -1,7 +1,17 @@
 diff --git a/mt7915/init.c b/mt7915/init.c
 --- a/mt7915/init.c
 +++ b/mt7915/init.c
-@@ -584,11 +584,20 @@
+@@ -509,7 +509,8 @@
+ 	/* init led callbacks */
+ 	if (IS_ENABLED(CONFIG_MT76_LEDS)) {
+ 		mphy->leds.cdev.brightness_set = mt7915_led_set_brightness;
+-		mphy->leds.cdev.blink_set = mt7915_led_set_blink;
++		if (!led_sw_blink)
++			mphy->leds.cdev.blink_set = mt7915_led_set_blink;
+ 	}
+ }
+ 
+@@ -584,11 +585,24 @@
  		mt76_set(dev, MT_AGG_ACR4(band), MT_AGG_ACR_PPDU_TXS2H);
  }
  
@@ -9,22 +19,26 @@ diff --git a/mt7915/init.c b/mt7915/init.c
 +module_param(led_active_low, bool, 0644);
 +MODULE_PARM_DESC(led_active_low, "LED output is active low");
 +
++static bool led_sw_blink = true;
++module_param(led_sw_blink, bool, 0644);
++MODULE_PARM_DESC(led_sw_blink,
++		 "Use the LED core software blink instead of the hardware blink engine");
++
  static void
  mt7915_init_led_mux(struct mt7915_dev *dev)
  {
 -	if (!IS_ENABLED(CONFIG_MT76_LEDS))
 -		return;
-+	/* When mt76 is built as an external module (OpenWrt) the kernel
-+	 * config symbol CONFIG_MT76_LEDS is not set, so this function used
-+	 * to bail out early.  The LED mux still has to be programmed or the
-+	 * LED engine output never reaches the module LED pins (MT7916 uses
-+	 * MUX1 bits 27:24 and 31:28 with value 3).
++	/* The MT7916 LED engine only reaches the module LED pins when
++	 * MUX1[27:24] and MUX1[31:28] are set to 3.  Drop the
++	 * CONFIG_MT76_LEDS early return so the mux is also programmed when
++	 * mt76 is built as an external module without that symbol.
 +	 */
 +	dev->mphy.leds.al = led_active_low;
  
  	if (dev->dbdc_support) {
  		switch (mt76_chip(&dev->mt76)) {
-@@ -604,6 +613,7 @@
+@@ -604,6 +618,7 @@
  			mt76_rmw_field(dev, MT_LED_GPIO_MUX0,
  				       GENMASK(11, 8), 1);
  			break;
@@ -32,7 +46,7 @@ diff --git a/mt7915/init.c b/mt7915/init.c
  		case 0x7916:
  			mt76_rmw_field(dev, MT_LED_GPIO_MUX1,
  				       GENMASK(27, 24), 3);
-@@ -623,6 +633,7 @@
+@@ -623,6 +638,7 @@
  			mt76_rmw_field(dev, MT_LED_GPIO_MUX0,
  				       GENMASK(11, 8), 1);
  			break;
@@ -40,7 +54,7 @@ diff --git a/mt7915/init.c b/mt7915/init.c
  		case 0x7916:
  			mt76_rmw_field(dev, MT_LED_GPIO_MUX1,
  				       GENMASK(31, 28), 3);
-@@ -640,6 +651,7 @@
+@@ -640,6 +656,7 @@
  			mt76_rmw_field(dev, MT_LED_GPIO_MUX0,
  				       GENMASK(7, 4), 1);
  			break;

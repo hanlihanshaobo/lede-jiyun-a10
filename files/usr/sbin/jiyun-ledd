@@ -1,0 +1,142 @@
+#!/bin/sh
+# jiyun-ledd - drive the Jiyun A10 front-panel activity LEDs.
+#
+#   left  (wlan)      : wlan0 (2.4G) or wlan1 (5G) traffic
+#   right (mt76-phy1) : whatever is plugged into the M.2 slot
+#                       (block devices / netdevs below 3c0800000.pcie)
+#
+# Both LEDs use the kernel "timer" trigger while there is traffic and are
+# switched off after a short idle period.  mt7915e runs with led_sw_blink=1,
+# so the LED core (not the MT7916 hardware blink engine) does the blinking
+# and both sides stay in sync.
+
+LEFT=wlan
+RIGHT=mt76-phy1
+M2_PCI=3c0800000.pcie
+IDLE_TICKS=2
+
+led_blink() {
+	local l=$1
+	[ -e /sys/class/leds/$l/trigger ] || return 1
+	case "$(cat /sys/class/leds/$l/trigger 2>/dev/null)" in
+		*"[timer]"*) return 0 ;;
+	esac
+	echo none > /sys/class/leds/$l/trigger 2>/dev/null
+	echo timer > /sys/class/leds/$l/trigger 2>/dev/null
+	echo 500 > /sys/class/leds/$l/delay_on 2>/dev/null
+	echo 500 > /sys/class/leds/$l/delay_off 2>/dev/null
+}
+
+led_off() {
+	local l=$1
+	[ -e /sys/class/leds/$l/trigger ] || return 1
+	echo none > /sys/class/leds/$l/trigger 2>/dev/null
+	echo 0 > /sys/class/leds/$l/brightness 2>/dev/null
+}
+
+led_ensure_off() {
+	local l=$1
+	[ -e /sys/class/leds/$l/trigger ] || return
+	case "$(cat /sys/class/leds/$l/trigger 2>/dev/null)" in
+		*"[none]"*) return ;;
+	esac
+	led_off "$l"
+}
+
+net_sig() {
+	local s="" i r t
+	for i in wlan0 wlan1; do
+		[ -r /sys/class/net/$i/statistics/rx_bytes ] || continue
+		read r < /sys/class/net/$i/statistics/rx_bytes
+		read t < /sys/class/net/$i/statistics/tx_bytes
+		s="$s $i:$r:$t"
+	done
+	echo "$s"
+}
+
+m2_scan() {
+	local s="" d n dev p
+	for d in /sys/block/*; do
+		dev=${d##*/}
+		case "$dev" in loop*|ram*|mtdblock*) continue ;; esac
+		p=$(readlink -f "$d/device" 2>/dev/null)
+		case "$p" in *"$M2_PCI"*) s="$s $d" ;; esac
+	done
+	for n in /sys/class/net/*; do
+		p=$(readlink -f "$n/device" 2>/dev/null)
+		case "$p" in *"$M2_PCI"*) s="$s $n" ;; esac
+	done
+	echo "$s"
+}
+
+m2_sig() {
+	local s="" p a b c d e f g h rest r t
+	for p in $M2_LIST; do
+		case "$p" in
+		/sys/block/*)
+			[ -r "$p/stat" ] || continue
+			read a b c d e f g h rest < "$p/stat"
+			s="$s $p:$a:$c:$e:$g"
+			;;
+		/sys/class/net/*)
+			[ -r "$p/statistics/rx_bytes" ] || continue
+			read r < "$p/statistics/rx_bytes"
+			read t < "$p/statistics/tx_bytes"
+			s="$s $p:$r:$t"
+			;;
+		esac
+	done
+	echo "$s"
+}
+
+led_off "$LEFT"
+led_off "$RIGHT"
+
+M2_LIST=$(m2_scan)
+last_l=$(net_sig)
+last_r=$(m2_sig)
+idle_l=99
+idle_r=99
+state_l=0
+state_r=0
+tick=0
+
+while true; do
+	sleep 1
+	tick=$((tick + 1))
+	[ $((tick % 10)) -eq 0 ] && M2_LIST=$(m2_scan)
+
+	cur=$(net_sig)
+	if [ "$cur" != "$last_l" ]; then
+		idle_l=0
+		if [ "$state_l" != 1 ] && led_blink "$LEFT"; then
+			state_l=1
+		fi
+	else
+		idle_l=$((idle_l + 1))
+		if [ "$state_l" = 1 ] && [ $idle_l -ge $IDLE_TICKS ]; then
+			led_off "$LEFT"
+			state_l=0
+		elif [ "$state_l" = 0 ]; then
+			led_ensure_off "$LEFT"
+		fi
+	fi
+	last_l=$cur
+
+	cur=$(m2_sig)
+	if [ "$cur" != "$last_r" ]; then
+		idle_r=0
+		if [ "$state_r" != 1 ] && led_blink "$RIGHT"; then
+			state_r=1
+		fi
+	else
+		idle_r=$((idle_r + 1))
+		if [ "$state_r" = 1 ] && [ $idle_r -ge $IDLE_TICKS ]; then
+			led_off "$RIGHT"
+			state_r=0
+		elif [ "$state_r" = 0 ]; then
+			led_ensure_off "$RIGHT"
+		fi
+	fi
+	last_r=$cur
+done

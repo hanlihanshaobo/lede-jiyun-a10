@@ -201,11 +201,19 @@ install -m 0755 "$ROOT/files/99-jiyun-resize" "$BASE/etc/uci-defaults/99-jiyun-r
 # right = wlan1/M.2 traffic.  Exposed in LuCI -> System -> LED Configuration.
 install -m 0755 "$ROOT/files/99-jiyun-led" "$BASE/etc/uci-defaults/99-jiyun-led"
 
-# The MT7916 panel LED is active low; mt7915e has a led_active_low module
-# parameter added by kernel/backport-6.18/200-mt7916-led-mux.patch.
+# The MT7916 panel LED is active low and its blink has to come from the LED
+# core (the MT7916 hardware blink engine is irregular); both are module
+# parameters added by kernel/backport-6.18/200-mt7916-led-mux.patch.
 mkdir -p "$BASE/etc/modprobe.d"
 install -m 0644 "$ROOT/files/etc/modprobe.d/mt7915e.conf" \
 	"$BASE/etc/modprobe.d/mt7915e.conf"
+
+# Activity LED daemon: left = wlan0+wlan1 traffic, right = M.2 slot traffic.
+# The middle sys LED stays with the UCI/led-init configuration.
+mkdir -p "$BASE/usr/sbin" "$BASE/etc/init.d" "$BASE/etc/rc.d"
+install -m 0755 "$ROOT/files/usr/sbin/jiyun-ledd" "$BASE/usr/sbin/jiyun-ledd"
+install -m 0755 "$ROOT/files/etc/init.d/jiyun-ledd" "$BASE/etc/init.d/jiyun-ledd"
+ln -sf ../init.d/jiyun-ledd "$BASE/etc/rc.d/S99jiyun-ledd"
 
 # LuCI overview: hide the DSA CPU/conduit port (eth0), show lan1-3/wan only.
 # This must go into the global files/ overlay (applied after all packages),

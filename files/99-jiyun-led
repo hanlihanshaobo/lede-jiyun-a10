@@ -4,12 +4,13 @@
 # The three front-panel LEDs are exposed as LED class devices so they can be
 # managed from LuCI (System -> LED Configuration):
 #
-#   wlan  (left)  gpio4 C5,  netdev trigger on wlan0  -> blinks with 2.4G traffic
+#   wlan  (left)  gpio4 C5,  driven by jiyun-ledd: wlan0 + wlan1 traffic
 #   sys   (middle) gpio0 PC4, DTS heartbeat for boot, S96led then sets default-on
-#   m2    (right) mt76-phy1,  netdev trigger on wlan1 -> blinks with 5G/M.2 traffic
+#   m2    (right) mt76-phy1,  driven by jiyun-ledd: M.2 slot traffic
 #
-# /etc/init.d/led applies this config early; rc.local re-applies it once the
-# wireless interfaces exist and then turns the middle LED solid.
+# The left/right entries below are kept so the LEDs stay visible in LuCI, but
+# /usr/sbin/jiyun-ledd (S99jiyun-ledd) owns their trigger/brightness and
+# overrides the netdev settings a second after boot.
 
 uci -q batch <<EOF
 delete system.led_wlan

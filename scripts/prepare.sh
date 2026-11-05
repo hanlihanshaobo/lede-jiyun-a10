@@ -58,8 +58,32 @@ grep -q "^KERNEL_PATCHVER:=$KVER\$" "$RK_MK" || {
 }
 
 # ---------------------------------------------------------------------------
-# 0b. arm64 UAPI fix for 7.3
+# 0b. target kernel config for $KVER
 #
+# Upstream only ships target/linux/rockchip/armv8/config-6.18.  Without a
+# config-7.3 the target is built with the generic config alone: no PCIe (the
+# MT7916 radios), no MMC/eMMC, none of the rockchip PHY/thermal/clock drivers -
+# the kernel compiles, but the image is useless and mt76 fails to build because
+# CONFIG_PCI (and therefore PCI_IRQ_ALL_TYPES) is not set.
+#
+# Seed it from the 6.18 file; symbols that no longer exist are dropped by
+# oldconfig, and new ones fall back to their defaults.
+# ---------------------------------------------------------------------------
+ARMCFG_DIR="$LEDE/target/linux/rockchip/armv8"
+ARMCFG="$ARMCFG_DIR/config-$KVER"
+if [ -f "$ARMCFG" ]; then
+	say "target kernel config $ARMCFG (upstream)"
+else
+	say "seed $ARMCFG from config-6.18"
+	[ -f "$ARMCFG_DIR/config-6.18" ] || {
+		echo "ERROR: no config-6.18 in $ARMCFG_DIR to seed from" >&2
+		exit 1
+	}
+	install -m 0644 "$ARMCFG_DIR/config-6.18" "$ARMCFG"
+fi
+
+# ---------------------------------------------------------------------------
+# 0c. arm64 UAPI fix for 7.3
 # 7.3 changed the 128-bit members of the arm64 UAPI to the __u128 typedef from
 # <linux/types.h>.  User space that reaches <asm/ptrace.h> through
 # <asm/bpf_perf_event.h> (libbpf does) then fails to build with

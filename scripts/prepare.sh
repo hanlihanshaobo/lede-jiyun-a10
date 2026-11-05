@@ -193,6 +193,9 @@ if [ "${KVER%%.*}" -ge 7 ]; then
 	}
 	install -m 0644 "$ROOT/kernel/patches/121-cfg80211-kernel-7.3-compat.patch" \
 		"$CFG_PATCH_DIR/121-cfg80211-kernel-7.3-compat.patch"
+	# 7.3 removed strncpy(); the switch_vif_chanctx trace still uses it.
+	install -m 0644 "$ROOT/kernel/patches/122-mac80211-trace-strscpy-pad.patch" \
+		"$CFG_PATCH_DIR/122-mac80211-trace-strscpy-pad.patch"
 fi
 
 # ---------------------------------------------------------------------------

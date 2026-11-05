@@ -1,0 +1,26 @@
+From: Jiyun A10 build <noreply@localhost>
+Subject: [PATCH] mac80211: use strscpy_pad() in the switch_vif_chanctx trace
+
+7.3 removed strncpy() from the kernel, so net/mac80211/trace.h no longer
+builds:
+
+  ./net/mac80211/./trace.h:1805: implicit declaration of 'strncpy'
+
+strscpy_pad() is the documented replacement for the zero-padded copy this
+code wants, and exists since 5.19, so use it unconditionally.
+
+--- a/net/mac80211/trace.h
++++ b/net/mac80211/trace.h
+@@ -1796,9 +1796,9 @@
+ 				SWITCH_ENTRY_ASSIGN(vif.vif_type, vif->type);
+ 				SWITCH_ENTRY_ASSIGN(vif.p2p, vif->p2p);
+ 				SWITCH_ENTRY_ASSIGN(link_id, link_conf->link_id);
+-				strncpy(local_vifs[i].vif.vif_name,
+-					sdata->name,
+-					sizeof(local_vifs[i].vif.vif_name));
++				strscpy_pad(local_vifs[i].vif.vif_name,
++					    sdata->name,
++					    sizeof(local_vifs[i].vif.vif_name));
+ 				SWITCH_ENTRY_ASSIGN(old_chandef.control_freq,
+ 						old_ctx->def.chan->center_freq);
+ 				SWITCH_ENTRY_ASSIGN(old_chandef.freq_offset,

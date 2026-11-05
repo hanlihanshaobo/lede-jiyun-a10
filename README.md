@@ -159,6 +159,11 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
   `113`, `700`; reasons in the script). Our own patches go on top. The order
   matters: target patches are applied *after* generic backport/pending/hack, so
   a patch that applies to a pristine 7.3.1 tree can still fail here (`039-2`).
+- **7.3 build fixes**: `kernel/patches/` also carries the non-board fixes a 7.3
+  build needs - arm64 UAPI `__u128` (generic hack), `kmod-phy-realtek` ->
+  `kmod-phy-package` (netdevices.mk), and mac80211 backports 6.18.39
+  (`mac_pton`, `struct class.namespace`, `strncpy`). See the 7.3 section of the
+  porting notes for the full story.
 - **BTF must be off** (`# CONFIG_KERNEL_DEBUG_INFO_BTF is not set`), otherwise
   `cfg80211` fails module BTF validation and the whole wireless stack refuses to
   load.

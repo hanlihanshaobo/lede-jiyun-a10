@@ -56,9 +56,11 @@ if $BB mount -o ro "$ROOT" /mnt 2>/dev/null; then
 		if $BB mount -o rw "$ROOT" /mnt 2>/dev/null; then
 			$BB sync
 			$BB mkdir -p /mnt/proc /mnt/sys /mnt/dev 2>/dev/null
-			$BB mount --move /proc /mnt/proc 2>/dev/null
-			$BB mount --move /sys /mnt/sys 2>/dev/null
-			$BB mount --move /dev /mnt/dev 2>/dev/null
+			$BB mount -t proc proc /mnt/proc 2>/dev/null
+			$BB mount -t sysfs sys /mnt/sys 2>/dev/null
+			$BB mount -t devtmpfs dev /mnt/dev 2>/dev/null
+			[ -e /mnt/dev/console ] || $BB mknod /mnt/dev/console c 5 1 2>/dev/null
+			[ -e /mnt/dev/null ] || $BB mknod /mnt/dev/null c 1 3 2>/dev/null
 			exec $BB switch_root /mnt /sbin/init
 		fi
 	fi
@@ -104,9 +106,11 @@ if [ -d /mnt/etc ]; then
 	$BB dd if="$LOG" of="$WHOLE" bs=512 seek=1000 conv=fsync 2>/dev/null
 	msg "handing over to rootfs"
 	$BB mkdir -p /mnt/proc /mnt/sys /mnt/dev 2>/dev/null
-	$BB mount --move /proc /mnt/proc 2>/dev/null
-	$BB mount --move /sys /mnt/sys 2>/dev/null
-	$BB mount --move /dev /mnt/dev 2>/dev/null
+	$BB mount -t proc proc /mnt/proc 2>/dev/null
+	$BB mount -t sysfs sys /mnt/sys 2>/dev/null
+	$BB mount -t devtmpfs dev /mnt/dev 2>/dev/null
+	[ -e /mnt/dev/console ] || $BB mknod /mnt/dev/console c 5 1 2>/dev/null
+	[ -e /mnt/dev/null ] || $BB mknod /mnt/dev/null c 1 3 2>/dev/null
 	$BB sync
 	exec $BB switch_root /mnt /sbin/init
 fi

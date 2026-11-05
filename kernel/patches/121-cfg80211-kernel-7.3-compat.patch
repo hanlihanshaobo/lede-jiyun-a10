@@ -1,11 +1,12 @@
 From: Jiyun A10 build <noreply@localhost>
-Subject: [PATCH] cfg80211: build against kernel 7.3
+Subject: [PATCH] mac80211: build against kernel 7.3
 
 Two kernel API changes break backports 6.18.39 on 7.3:
 
- - mac_pton() moved from <linux/string.h> to <linux/hex.h>, so the
-   macaddress_store() added by 120-cfg80211_allow_perm_addr_change.patch
-   fails with "implicit declaration of function 'mac_pton'".
+ - mac_pton() moved from <linux/string.h> to <linux/hex.h>.  Both
+   macaddress_store() (added by 120-cfg80211_allow_perm_addr_change.patch)
+   and mac80211's debugfs_netdev.c call it, and fail with "implicit
+   declaration of function 'mac_pton'".
 
  - struct class.namespace changed from "const void *(*)(...)" to
    "const struct ns_common *(*)(...)" (the 7.3 namespace rework), so
@@ -49,3 +50,16 @@ kernel version so the 6.18 build is unaffected.
  
  struct class ieee80211_class = {
  	.name = "ieee80211",
+--- a/net/mac80211/debugfs_netdev.c
++++ b/net/mac80211/debugfs_netdev.c
+@@ -14,6 +14,10 @@
+ #include <linux/rtnetlink.h>
+ #include <linux/slab.h>
+ #include <linux/notifier.h>
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include <linux/hex.h>
++#include <linux/version.h>
++#endif
+ #include <net/mac80211.h>
+ #include <net/cfg80211.h>
+ #include "ieee80211_i.h"

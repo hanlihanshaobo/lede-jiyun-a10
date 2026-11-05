@@ -2,46 +2,66 @@
 #
 # First-boot offline rootfs resize for the Jiyun A10.
 #
-# The flashed eMMC image contains a small ext4 inside the full-size p1.
-# The kernel's online resize path cannot grow a make_ext4fs image past
-# ~377 MB (backup GDT layout), so this initramfs runs e2fsprogs *before*
-# the rootfs is mounted:
+# Two target-specific facts drive this script:
 #
-#   e2fsck -fy /dev/mmcblk0p1
-#   resize2fs /dev/mmcblk0p1        # no size -> p1 size, fully adaptive
+#   * The kernel is built WITHOUT devtmpfs (the generic kernel config sets
+#     CONFIG_DEVTMPFS=n and the rockchip config does not override it), so
+#     /dev in the initramfs only has the console/null nodes from the cpio.
+#   * /init runs before the eMMC probe has finished, and the kernel does not
+#     run prepare_namespace()/wait_for_device_probe() for an initramfs init.
 #
-# It then mounts p1 read-write and switch_root()s into the real system.
-# /etc/.expanded records a successful resize so later boots skip this.
+# Therefore we create the mmc device nodes ourselves and wait for the
+# partition to show up in sysfs before mounting it.  Then e2fsck/resize2fs
+# run on the unmounted p1 (the kernel 6.18 online resize path cannot grow a
+# make_ext4fs image past ~377 MB), before switch_root into the real rootfs.
+# /etc/.expanded makes later boots skip the offline work.
 
 BB=/bin/busybox
 ROOT=/dev/mmcblk0p1
+WHOLE=/dev/mmcblk0
+LOG=/tmp/initramfs.log
+CONS=/dev/console
 
-msg() { echo "jiyun-initramfs: $*" >/dev/console; }
+: > "$LOG" 2>/dev/null
+log() { echo "$*" >> "$LOG" 2>/dev/null; echo "jiyun-initramfs: $*" > "$CONS" 2>/dev/null; }
+msg() { echo "jiyun-initramfs: $*" > "$CONS" 2>/dev/null; }
 
-$BB mount -t proc proc /proc
-$BB mount -t sysfs sys /sys
+$BB mount -t proc proc /proc 2>/dev/null
+$BB mount -t sysfs sys /sys 2>/dev/null
 $BB mount -t devtmpfs dev /dev 2>/dev/null || true
-$BB mkdir -p /mnt
 
+# devtmpfs is not available: create the eMMC nodes explicitly.
+[ -b "$WHOLE" ] || $BB mknod "$WHOLE" b 179 0 2>/dev/null
+[ -b "$ROOT" ] || $BB mknod "$ROOT" b 179 1 2>/dev/null
+
+# Wait for the eMMC probe to register the partition (sysfs is authoritative;
+# a node created by mknod is "block" even before the device exists).
 i=0
-while [ ! -b "$ROOT" ] && [ "$i" -lt 60 ]; do
+while [ ! -e /sys/class/block/mmcblk0p1 ] && [ "$i" -lt 60 ]; do
 	$BB sleep 1
 	i=$((i + 1))
 done
-[ -b "$ROOT" ] || msg "$ROOT not found, trying anyway"
+msg "waited ${i}s for mmcblk0p1"
+log "waited ${i}s"
 
-# Already expanded (flag written after a successful resize)?  Mount
-# read-only first: on a clean fs this avoids a journal replay before the
-# flag check.
+# Best-effort debug log in the reserved gap before p1 (LBA 1000).
+$BB dd if="$LOG" of="$WHOLE" bs=512 seek=1000 conv=fsync 2>/dev/null
+
+# Already expanded?  Mount read-only first to avoid a journal replay before
+# the flag check.
 if $BB mount -o ro "$ROOT" /mnt 2>/dev/null; then
 	if [ -f /mnt/etc/.expanded ]; then
 		msg "rootfs already expanded, skipping resize"
 		$BB umount /mnt 2>/dev/null
 		if $BB mount -o rw "$ROOT" /mnt 2>/dev/null; then
+			$BB sync
+			$BB mkdir -p /mnt/proc /mnt/sys /mnt/dev 2>/dev/null
+			$BB mount --move /proc /mnt/proc 2>/dev/null
+			$BB mount --move /sys /mnt/sys 2>/dev/null
+			$BB mount --move /dev /mnt/dev 2>/dev/null
 			exec $BB switch_root /mnt /sbin/init
 		fi
 	fi
-	# resize2fs needs p1 fully unmounted
 	j=0
 	while ! $BB umount /mnt 2>/dev/null; do
 		j=$((j + 1))
@@ -49,29 +69,28 @@ if $BB mount -o ro "$ROOT" /mnt 2>/dev/null; then
 		$BB sleep 1
 	done
 else
-	msg "rootfs not mountable read-only, running fsck anyway"
+	msg "rootfs not mountable read-only, running fsck"
 fi
 
 if [ -x /sbin/e2fsck ]; then
 	msg "e2fsck -fy $ROOT"
-	/sbin/e2fsck -fy "$ROOT" >/dev/console 2>&1
-	rc=$?
-	[ "$rc" -le 1 ] || msg "e2fsck returned $rc"
+	/sbin/e2fsck -fy "$ROOT" >>"$LOG" 2>&1
+	log "e2fsck rc=$?"
 else
-	msg "e2fsck missing from initramfs"
+	msg "e2fsck missing"
 fi
 
 resized=0
 if [ -x /sbin/resize2fs ]; then
 	msg "resize2fs $ROOT"
-	if /sbin/resize2fs "$ROOT" >/dev/console 2>&1; then
+	if /sbin/resize2fs "$ROOT" >>"$LOG" 2>&1; then
 		resized=1
 	fi
+	log "resize2fs done rc=$?"
 else
-	msg "resize2fs missing from initramfs"
+	msg "resize2fs missing"
 fi
 
-# Hand over to the real rootfs, read-write like a normal root= mount.
 j=0
 while ! $BB mount -o rw "$ROOT" /mnt 2>/dev/null; do
 	j=$((j + 1))
@@ -82,8 +101,16 @@ done
 if [ -d /mnt/etc ]; then
 	[ "$resized" = 1 ] && $BB touch /mnt/etc/.expanded
 	$BB sync
+	$BB dd if="$LOG" of="$WHOLE" bs=512 seek=1000 conv=fsync 2>/dev/null
+	msg "handing over to rootfs"
+	$BB mkdir -p /mnt/proc /mnt/sys /mnt/dev 2>/dev/null
+	$BB mount --move /proc /mnt/proc 2>/dev/null
+	$BB mount --move /sys /mnt/sys 2>/dev/null
+	$BB mount --move /dev /mnt/dev 2>/dev/null
+	$BB sync
 	exec $BB switch_root /mnt /sbin/init
 fi
 
 msg "cannot mount $ROOT, dropping to shell"
+$BB dd if="$LOG" of="$WHOLE" bs=512 seek=1000 conv=fsync 2>/dev/null
 exec $BB sh

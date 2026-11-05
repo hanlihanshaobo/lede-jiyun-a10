@@ -1,19 +1,9 @@
 diff --git a/mt7915/init.c b/mt7915/init.c
 --- a/mt7915/init.c
 +++ b/mt7915/init.c
-@@ -509,7 +509,8 @@
- 	/* init led callbacks */
- 	if (IS_ENABLED(CONFIG_MT76_LEDS)) {
- 		mphy->leds.cdev.brightness_set = mt7915_led_set_brightness;
--		mphy->leds.cdev.blink_set = mt7915_led_set_blink;
-+		if (!led_sw_blink)
-+			mphy->leds.cdev.blink_set = mt7915_led_set_blink;
- 	}
- }
- 
-@@ -584,11 +585,24 @@
- 		mt76_set(dev, MT_AGG_ACR4(band), MT_AGG_ACR_PPDU_TXS2H);
- }
+@@ -12,6 +12,15 @@
+ #include "coredump.h"
+ #include "eeprom.h"
  
 +static bool led_active_low = true;
 +module_param(led_active_low, bool, 0644);
@@ -24,6 +14,20 @@ diff --git a/mt7915/init.c b/mt7915/init.c
 +MODULE_PARM_DESC(led_sw_blink,
 +		 "Use the LED core software blink instead of the hardware blink engine");
 +
+ static const struct ieee80211_iface_limit if_limits[] = {
+ 	{
+ 		.max = 1,
+@@ -509,7 +518,8 @@
+ 	/* init led callbacks */
+ 	if (IS_ENABLED(CONFIG_MT76_LEDS)) {
+ 		mphy->leds.cdev.brightness_set = mt7915_led_set_brightness;
+-		mphy->leds.cdev.blink_set = mt7915_led_set_blink;
++		if (!led_sw_blink)
++			mphy->leds.cdev.blink_set = mt7915_led_set_blink;
+ 	}
+ }
+ 
+@@ -587,8 +597,12 @@
  static void
  mt7915_init_led_mux(struct mt7915_dev *dev)
  {

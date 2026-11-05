@@ -154,11 +154,12 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
   flips them (it also has to append `NET_DSA_REALTEK_MDIO`, which is not in the
   7.3 fragment at all).
 - **Rockchip target patches**: upstream has no `target/linux/rockchip/patches-7.3`
-  yet, so `prepare.sh` seeds it from `patches-6.18` and skips the seven patches
-  that do not apply to 7.3.1 (`0130`, `039-*`, `106-nanopi-r4s-sd-power-cycle`,
-  `113`, `700`; reasons in the script). Our own patches go on top. The order
-  matters: target patches are applied *after* generic backport/pending/hack, so
-  a patch that applies to a pristine 7.3.1 tree can still fail here (`039-2`).
+  yet, so `prepare.sh` seeds it from `patches-6.18` and skips the patches that
+  are not usable on 7.3.1 (`0130`, `039-*`, `106-nanopi-r4s-sd-power-cycle`,
+  `113`, `700`, `803-807`; reasons in the script). Our own patches go on top.
+  The order matters: target patches are applied *after* generic
+  backport/pending/hack, so a patch that applies to a pristine 7.3.1 tree can
+  still fail here (`039-2`).
 - **7.3 build fixes**: `kernel/patches/` also carries the non-board fixes a 7.3
   build needs - arm64 UAPI `__u128` (generic hack), `kmod-phy-realtek` ->
   `kmod-phy-package` (netdevices.mk), and mac80211 backports 6.18.39

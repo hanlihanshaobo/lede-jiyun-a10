@@ -132,6 +132,8 @@ install -m 0644 "$ROOT/files/rk3568-jiyun-a10.dts" "$DTS_DIR/rk3568-jiyun-a10.dt
 #   106-nanopi-r4s-sd-power-cycle       R4S DTS changed upstream
 #   113-...stmmac-SGMII-QSGMII          6/14 hunks, not this board
 #   700-...stmmac-disable-VLAN-hw-filter include/linux/stmmac.h moved
+#   803-807                              RK3328 DMC/DFI devfreq; 804 uses
+#                                       clk_ops.round_rate, removed in 7.3
 #
 # Once upstream adds patches-$KVER the copy is skipped and only the patches
 # installed below are added on top.
@@ -149,8 +151,8 @@ else
 	shopt -s nullglob
 	for f in "$SRC_PATCH_DIR"/*.patch; do
 		case "$(basename "$f")" in
-		0130-*|039-*|106-nanopi-r4s-sd-power-cycle*|113-*|700-*)
-			echo "skipping $(basename "$f") (does not apply to $KVER)"
+		0130-*|039-*|106-nanopi-r4s-sd-power-cycle*|113-*|700-*|80[3-7]-*)
+			echo "skipping $(basename "$f") (not usable on $KVER)"
 			;;
 		*)
 			cp "$f" "$RK_PATCH_DIR/"

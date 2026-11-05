@@ -1,0 +1,23 @@
+From: Jiyun A10 build <noreply@localhost>
+Subject: [PATCH] nvmem: layouts: include <linux/hex.h>
+
+7.3 moved mac_pton() and hex_to_bin() into <linux/hex.h>.  The MAC base
+cell layouts added by 809-01-nvmem-core-generalize-mac-base-cells-handling
+use both and fail to build with:
+
+  drivers/nvmem/layouts.c:47: implicit declaration of 'mac_pton'
+  drivers/nvmem/layouts.c:72: implicit declaration of 'hex_to_bin'
+
+Include the header.  The file only exists once the pending patch above has
+been applied, so this goes into the hack series (applied after pending).
+
+--- a/drivers/nvmem/layouts.c
++++ b/drivers/nvmem/layouts.c
+@@ -10,6 +10,7 @@
+ #include <linux/device.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/etherdevice.h>
++#include <linux/hex.h>
+ #include <linux/if_ether.h>
+ #include <linux/nvmem-consumer.h>
+ #include <linux/nvmem-provider.h>

@@ -99,6 +99,11 @@ if [ "${KVER%%.*}" -ge 7 ] && [ -d "$LEDE/target/linux/generic/hack-$KVER" ]; th
 	say "install arm64 UAPI __u128 workaround"
 	install -m 0644 "$ROOT/kernel/patches/0001-arm64-uapi-uint128.patch" \
 		"$LEDE/target/linux/generic/hack-$KVER/0001-arm64-uapi-uint128.patch"
+	# 7.3 moved mac_pton()/hex_to_bin() to <linux/hex.h>; the nvmem MAC
+	# layouts that pending-7.3/809-01 adds use both without the include.
+	say "install nvmem layouts hex.h fix"
+	install -m 0644 "$ROOT/kernel/patches/0002-nvmem-layouts-hex-include.patch" \
+		"$LEDE/target/linux/generic/hack-$KVER/0002-nvmem-layouts-hex-include.patch"
 else
 	say "no generic/hack-$KVER, skipping the arm64 UAPI workaround"
 fi

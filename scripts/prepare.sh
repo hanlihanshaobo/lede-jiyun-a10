@@ -109,6 +109,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 0d. dtc warning flags
+#
+# The dtc bundled with 7.3 no longer knows the "graph_child_address" check and
+# treats an unknown -Wno- name as fatal:
+#
+#   FATAL ERROR: Unrecognized check name "graph_child_address"
+#
+# LEDE's include/image.mk still passes it (and already passes -Wno-graph_port,
+# which is the check that replaced it), so drop that one line.
+# ---------------------------------------------------------------------------
+IMG_MK="$LEDE/include/image.mk"
+if grep -q 'Wno-graph_child_address' "$IMG_MK"; then
+	say "drop -Wno-graph_child_address from image.mk"
+	sed '/-Wno-graph_child_address/d' "$IMG_MK" > "$IMG_MK.tmp" && mv "$IMG_MK.tmp" "$IMG_MK"
+fi
+
+# ---------------------------------------------------------------------------
 # 1. device tree
 # ---------------------------------------------------------------------------
 say "install device tree"

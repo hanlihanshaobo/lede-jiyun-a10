@@ -51,8 +51,21 @@ $BB dd if="$LOG" of="$WHOLE" bs=512 seek=1000 conv=fsync 2>/dev/null
 # the flag check.
 if $BB mount -o ro "$ROOT" /mnt 2>/dev/null; then
 	if [ -f /mnt/etc/.expanded ]; then
-		msg "rootfs already expanded, skipping resize"
-		$BB umount /mnt 2>/dev/null
+		msg "rootfs already expanded, checking filesystem"
+		j=0
+		while ! $BB umount /mnt 2>/dev/null; do
+			j=$((j + 1))
+			[ "$j" -ge 10 ] && break
+			$BB sleep 1
+		done
+		# Only run e2fsck if /mnt really is unmounted.
+		if ! $BB grep -q " $ROOT /mnt " /proc/mounts 2>/dev/null; then
+			if [ -x /sbin/e2fsck ]; then
+				msg "e2fsck -p $ROOT"
+				/sbin/e2fsck -p "$ROOT" >>"$LOG" 2>&1
+				log "e2fsck -p rc=$?"
+			fi
+		fi
 		if $BB mount -o rw "$ROOT" /mnt 2>/dev/null; then
 			$BB sync
 			$BB mkdir -p /mnt/proc /mnt/sys /mnt/dev 2>/dev/null

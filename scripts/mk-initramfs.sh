@@ -19,7 +19,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/bin" "$TMP/sbin" "$TMP/lib" "$TMP/usr/lib" \
-	"$TMP/proc" "$TMP/sys" "$TMP/dev" "$TMP/mnt"
+	"$TMP/proc" "$TMP/sys" "$TMP/dev" "$TMP/mnt" "$TMP/tmp"
 
 cp -L "$TARGET/bin/busybox" "$TMP/bin/busybox"
 chmod 0755 "$TMP/bin/busybox"

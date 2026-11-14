@@ -69,6 +69,34 @@ local function leases()
 	return out
 end
 
+-- Last apply result, written by /usr/libexec/macsplit-apply:
+--   "ok|fail <epoch> <message>"
+local function last_result()
+	local f = io.open("/tmp/macsplit/last-result", "r")
+	if not f then
+		return nil
+	end
+	local line = f:read("*l") or ""
+	f:close()
+	local st, ts, msg = line:match("^(%S+)%s+(%S+)%s*(.*)$")
+	if not st or not ts then
+		return nil
+	end
+	return st, tonumber(ts), msg
+end
+
+local function passwall_running()
+	if not fs.access("/etc/config/passwall2") then
+		return false, false
+	end
+	-- A PassWall2 with only "direct" ACLs has no xray process but is still
+	-- running (app.sh + chinadns + dnsmasq + the "inet passwall2" nft table).
+	local running = sys.call(
+		"pidof xray >/dev/null 2>&1 || pidof sing-box >/dev/null 2>&1 || " ..
+		"nft list tables 2>/dev/null | grep -q 'table inet passwall2'") == 0
+	return true, running
+end
+
 local function add_node_options(o, first_label)
 	o:value("__direct__", first_label or translate("直连（不走代理）"))
 	if fs.access("/etc/config/passwall2") then
@@ -114,13 +142,83 @@ m.redirect = dispatcher.build_url("admin", "network", "macsplit")
 m.apply_on_parse = false
 
 -- ---------------------------------------------------------------------------
+-- Status line: PassWall2 / interface / last apply result
+-- ---------------------------------------------------------------------------
+s = m:section(SimpleSection, translate("运行状态"))
+o = s:option(DummyValue, "_status")
+o.rawhtml = true
+o.cfgvalue = function()
+	local out = { "<div class='ms-status'>" }
+	local function line(html)
+		out[#out + 1] = "<div>" .. html .. "</div>"
+	end
+
+	local has_pw, running = passwall_running()
+	if not has_pw then
+		line("<span class='ms-err'>PassWall2：未安装</span>")
+	elseif running then
+		line("<span class='ms-up'>PassWall2：运行中</span> · 生效接口 <code>" ..
+			util.pcdata(lan_device()) .. "</code>")
+	else
+		line("<span class='ms-err'>PassWall2：未运行</span> · 规则不会生效，请先在 PassWall2 里启动")
+	end
+
+	local st, ts, msg = last_result()
+	if st then
+		local when = os.date("%H:%M", ts)
+		if st == "ok" then
+			line("<span class='ms-up'>上次应用：成功</span> " .. when ..
+				" <span class='ms-test'>" .. util.pcdata(msg or "") .. "</span>")
+		else
+			line("<span class='ms-err'>上次应用：失败</span> " .. when ..
+				" <span class='ms-test'>" .. util.pcdata(msg or "") .. "</span>")
+		end
+	else
+		line("<span class='ms-down'>上次应用：无记录（设备重启后显示未知，但配置仍已保存）</span>")
+	end
+
+	out[#out + 1] = "</div>"
+	return table.concat(out)
+end
+
+-- One-row action table: reapply + jump to PassWall2.
+local actions = { actions = {} }
+s = m:section(Table, actions)
+s.template = "cbi/tblsection"
+s.anonymous = true
+
+o = s:option(Button, "_reapply", " ")
+o.inputtitle = translate("重新应用")
+o.inputstyle = "apply"
+o.write = function()
+	sys.call("/usr/libexec/macsplit-apply apply force >/dev/null 2>&1")
+	http.redirect(m.redirect)
+end
+
+o = s:option(Button, "_pw2", " ")
+o.inputtitle = translate("PassWall2 设置")
+o.inputstyle = "link"
+o.write = function()
+	http.redirect(dispatcher.build_url("admin", "services", "passwall2"))
+end
+
+-- ---------------------------------------------------------------------------
 -- Rules: one MAC -> one line
 -- ---------------------------------------------------------------------------
+local rule_count = 0
+uci:foreach("macsplit", "rule", function()
+	rule_count = rule_count + 1
+end)
+
 s = m:section(TypedSection, "rule", translate("MAC 规则"))
 s.anonymous = true
 s.addremove = true
 s.template = "cbi/tblsection"
-s.description = translate("点“添加”手动填 MAC，或从下面“在线设备”里一键添加。同一线路的多个 MAC 会自动合并成一条 ACL。")
+if rule_count == 0 then
+	s.description = translate("还没有规则：在下面选一台在线设备点“添加选中设备”，或点表格下方的“添加”手动填 MAC。")
+else
+	s.description = translate("一条规则 = 一个 MAC + 一条线路；同一线路的多个 MAC 会自动合并成一条 ACL。")
+end
 
 o = s:option(Flag, "enabled", translate("启用"))
 o.default = 1
@@ -129,10 +227,19 @@ o.rmempty = false
 o = s:option(Value, "mac", translate("MAC 地址"))
 o.rmempty = false
 o.placeholder = "aa:bb:cc:dd:ee:ff"
-o.validate = function(self, value)
+o.validate = function(self, value, section)
 	local mac = norm_mac(value)
 	if not mac then
 		return nil, translate("MAC 格式应为 aa:bb:cc:dd:ee:ff")
+	end
+	local dup = false
+	uci:foreach("macsplit", "rule", function(r)
+		if r[".name"] ~= section and norm_mac(r.mac) == mac then
+			dup = true
+		end
+	end)
+	if dup then
+		return nil, translate("这个 MAC 已经有一条规则了")
 	end
 	return mac
 end
@@ -140,6 +247,7 @@ end
 o = s:option(Value, "name", translate("备注"))
 o.rmempty = true
 o.datatype = "maxlength(24)"
+o.placeholder = translate("可留空")
 
 o = s:option(ListValue, "node", translate("代理线路"))
 o.default = "__direct__"
@@ -169,7 +277,7 @@ o.cfgvalue = function(self, section)
 		html = html .. " <span class='ms-ip'>" .. util.pcdata(e.ip) .. "</span>"
 	end
 	if e.host then
-		html = html .. " <span class='ms-host'>" .. util.pcdata(e.host) .. "</span>"
+		html = html .. "<br/><span class='ms-host'>" .. util.pcdata(e.host) .. "</span>"
 	end
 	return html
 end
@@ -194,7 +302,7 @@ table.sort(devices, function(a, b)
 end)
 
 s = m:section(SimpleSection, translate("在线设备"))
-s.description = translate("从当前在线设备里选一台，点“添加”就会新建一条规则（默认直连，再改代理线路）。")
+s.description = translate("列表是当前快照；新上线的设备刷新页面后才会出现，离线的设备请直接点表格下方的“添加”。")
 
 local quick = { add = {} }
 s = m:section(Table, quick)
@@ -208,7 +316,7 @@ o = s:option(ListValue, "_pick", translate("设备"))
 o.write = function() end
 o.remove = function() end
 if #devices == 0 then
-	o:value("__none__", translate("（暂无在线设备，可直接点上面的“添加”手填 MAC）"))
+	o:value("__none__", translate("（暂无在线设备）"))
 end
 for _, d in ipairs(devices) do
 	local label = d.mac
@@ -218,7 +326,7 @@ for _, d in ipairs(devices) do
 end
 
 o = s:option(Button, "_add", " ")
-o.inputtitle = translate("添加")
+o.inputtitle = translate("添加选中设备")
 o.inputstyle = "add"
 o.write = function()
 	local pick = m:formvalue("cbid.table.add._pick") or ""
@@ -241,11 +349,20 @@ o.write = function()
 			uci:set("macsplit", sid, "node", "__direct__")
 			local host = pick:match("^[^|]*|[^|]*|(.+)$")
 			if host and host ~= "" then
-				uci:set("macsplit", sid, "name", host)
+				-- the name field is maxlength(24); truncate so a long
+				-- hostname cannot block the next save
+				uci:set("macsplit", sid, "name", host:sub(1, 24))
 			end
 			uci:commit("macsplit")
 		end
 	end
+	http.redirect(m.redirect)
+end
+
+o = s:option(Button, "_refresh", " ")
+o.inputtitle = translate("刷新列表")
+o.inputstyle = "action"
+o.write = function()
 	http.redirect(m.redirect)
 end
 
@@ -276,13 +393,17 @@ o.cfgvalue = function()
 }
 .ms-up { color: #27ae60; font-weight: bold; }
 .ms-down { color: var(--text_color, #888); opacity: .65; }
-.ms-err { color: #e74c3c; }
+.ms-err { color: #e74c3c; font-weight: bold; }
 .ms-ip { color: var(--active_color, #5ea69b); }
-.ms-host { opacity: .7; }
+.ms-host { opacity: .7; font-size: 90%; }
+.ms-test { font-size: 90%; opacity: .8; }
+.ms-status { line-height: 1.7; }
+.ms-status > div { margin: 2px 0; }
 .cbi-tblsection .cbi-button { margin: 2px 6px 2px 0; }
 .cbi-tblsection { overflow-x: auto; }
-#cbi-table-table tr.cbi-section-table-titles { display: none; }
-#cbi-table-table td.cbi-value-field { padding: 2px 6px; }
+/* button-only tables: no header row; the rules table keeps its header */
+.cbi-tblsection:not(#cbi-macsplit-rule) tr.cbi-section-table-titles { display: none; }
+.cbi-tblsection:not(#cbi-macsplit-rule) td.cbi-value-field { padding: 2px 6px; }
 </style>
 <div class="ms-app" style="line-height:1.75">
 <p><b>怎么用：</b>“添加”一行 → 填 MAC → 选“代理线路” → “保存并应用”。就这么简单。</p>
@@ -294,7 +415,7 @@ o.cfgvalue = function()
 <li><b>不碰 WiFi/子网：</b>不改无线、不改网段，有线无线都按 MAC 命中；换 IP、DHCP 续租都不影响。</li>
 <li><b>合并：</b>同一线路的多个 MAC 只生成一条 ACL，只启动一个代理实例。</li>
 <li><b>未匹配直连：</b>PassWall2 全局关闭时，其它设备自动直连，不会被带到全局节点。</li>
-<li><b>生效：</b>“保存并应用”才会写入 ACL 并重启 PassWall2；“保存”只写配置。</li>
+<li><b>生效：</b>“保存并应用”才会写入 ACL 并重启 PassWall2（配置没变化时会跳过重启）；“保存”只写配置。</li>
 <li><b>日志：</b><code>/tmp/macsplit-apply.log</code>。</li>
 </ul>
 </div>

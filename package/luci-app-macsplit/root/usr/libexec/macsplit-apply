@@ -18,6 +18,7 @@ BACKUP_ROOT=/etc/macsplit/backup
 LOG=/tmp/macsplit-apply.log
 
 MODE=${1:-apply}
+FORCE=${2:-}
 BACKUP_MADE=0
 APPLY_OK=0
 
@@ -29,7 +30,14 @@ if [ "$MODE" != "restore" ]; then
 fi
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
-die() { log "ERROR: $*"; exit 1; }
+die() {
+	log "ERROR: $*"
+	printf 'fail\t%s\t%s\n' "$(date +%s)" "$*" > "$STATE/last-result" 2>/dev/null || true
+	exit 1
+}
+result_ok() {
+	printf 'ok\t%s\t%s\n' "$(date +%s)" "$1" > "$STATE/last-result" 2>/dev/null || true
+}
 
 uci_get() {
 	uci -q get "$1" 2>/dev/null || true
@@ -148,6 +156,21 @@ reload_services() {
 	sleep 1
 }
 
+# Restart PassWall2 only when the ACL config actually changed (or when the
+# user pressed 重新应用, which passes "force").
+maybe_reload() {
+	local new old
+	new=$(uci -q show passwall2 2>/dev/null | md5sum | cut -d' ' -f1)
+	old=$(cat "$STATE/acl.hash" 2>/dev/null || true)
+	if [ -n "$FORCE" ] || [ "$new" != "$old" ]; then
+		reload_services
+		echo "$new" > "$STATE/acl.hash"
+	else
+		log "ACL 无变化，跳过 PassWall2 重启"
+		uci -q commit passwall2 || true
+	fi
+}
+
 group_sid() {
 	case "$1" in
 		__direct__) echo "macsplit_direct" ;;
@@ -245,7 +268,8 @@ if [ "$COUNT" -eq 0 ] || [ "$HAS_PASSWALL2" != "1" ] || [ -z "$ACL_SCHEMA" ]; th
 		fi
 	fi
 	log "没有启用的 MAC 规则：已移除所有 $PREFIX* ACL"
-	reload_services
+	maybe_reload
+	result_ok "已清理（没有启用的规则）"
 	APPLY_OK=1
 	exit 0
 fi
@@ -343,7 +367,7 @@ done
 uci -q set "passwall2.@global[0].acl_enable=1"
 reorder_catchalls
 
-reload_services
+maybe_reload
 
 {
 	echo "rules=$COUNT"
@@ -353,5 +377,6 @@ reload_services
 	done < "$ROWS"
 } > "$STATE/status"
 
+result_ok "$COUNT 个 MAC，$GROUP_COUNT 条 ACL"
 APPLY_OK=1
 log "完成：$COUNT 个 MAC，$GROUP_COUNT 条 ACL"

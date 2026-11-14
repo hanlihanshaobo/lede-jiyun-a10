@@ -1,4 +1,6 @@
-config global 'global'
-	option enabled '0'
-	option interface 'lan'
-	option unmatched_direct '1'
+# Rules are managed from LuCI: 网络 -> 按 MAC 分流
+# config rule
+# 	option enabled '1'
+# 	option mac 'aa:bb:cc:dd:ee:ff'
+# 	option name '电视'
+# 	option node '__direct__'

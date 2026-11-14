@@ -134,8 +134,8 @@ local function add_node_options(o, first_label)
 	end
 end
 
-m = Map("macsplit", translate("按 MAC 分流"),
-	translate("给每个 MAC 单独指定一条 PassWall2 线路。有线、无线客户端都生效，不用改 WiFi 或子网。"))
+m = Map("macsplit", translate("多设备分流"),
+	translate("给每个设备（MAC）单独指定一条 PassWall2 线路。有线、无线客户端都生效，不用改 WiFi 或子网。"))
 m.redirect = dispatcher.build_url("admin", "network", "macsplit")
 -- This firmware has no generic /admin/uci/apply endpoint, so let CBI commit
 -- and run on_after_commit synchronously on "Save & Apply".
@@ -177,29 +177,15 @@ o.cfgvalue = function()
 		line("<span class='ms-down'>上次应用：无记录（设备重启后显示未知，但配置仍已保存）</span>")
 	end
 
+	out[#out + 1] = "<div class='ms-actions'>" ..
+		"<a class='btn cbi-button cbi-button-apply' href='" ..
+		dispatcher.build_url("admin", "network", "macsplit", "reapply") ..
+		"'>" .. translate("重新应用") .. "</a> " ..
+		"<a class='btn cbi-button cbi-button-link' href='" ..
+		dispatcher.build_url("admin", "services", "passwall2") ..
+		"'>" .. translate("PassWall2 设置") .. "</a></div>"
 	out[#out + 1] = "</div>"
 	return table.concat(out)
-end
-
--- One-row action table: reapply + jump to PassWall2.
-local actions = { actions = {} }
-s = m:section(Table, actions)
-s.template = "cbi/tblsection"
-s.anonymous = true
-
-o = s:option(Button, "_reapply", " ")
-o.inputtitle = translate("重新应用")
-o.inputstyle = "apply"
-o.write = function()
-	sys.call("/usr/libexec/macsplit-apply apply force >/dev/null 2>&1")
-	http.redirect(m.redirect)
-end
-
-o = s:option(Button, "_pw2", " ")
-o.inputtitle = translate("PassWall2 设置")
-o.inputstyle = "link"
-o.write = function()
-	http.redirect(dispatcher.build_url("admin", "services", "passwall2"))
 end
 
 -- ---------------------------------------------------------------------------
@@ -210,7 +196,8 @@ uci:foreach("macsplit", "rule", function()
 	rule_count = rule_count + 1
 end)
 
-s = m:section(TypedSection, "rule", translate("MAC 规则"))
+s = m:section(TypedSection, "rule",
+	translate("MAC 规则") .. (rule_count > 0 and string.format("（%d）", rule_count) or ""))
 s.anonymous = true
 s.addremove = true
 s.template = "cbi/tblsection"
@@ -285,9 +272,19 @@ end
 -- ---------------------------------------------------------------------------
 -- Online devices quick add
 -- ---------------------------------------------------------------------------
+local existing = {}
+uci:foreach("macsplit", "rule", function(r)
+	local mm = norm_mac(r.mac)
+	if mm then
+		existing[mm] = true
+	end
+end)
+
 local devices = {}
 for mac, e in pairs(leases()) do
-	devices[#devices + 1] = { mac = mac, ip = e.ip, host = e.host }
+	if not existing[mac] then
+		devices[#devices + 1] = { mac = mac, ip = e.ip, host = e.host }
+	end
 end
 table.sort(devices, function(a, b)
 	local function key(x)
@@ -316,7 +313,7 @@ o = s:option(ListValue, "_pick", translate("设备"))
 o.write = function() end
 o.remove = function() end
 if #devices == 0 then
-	o:value("__none__", translate("（暂无在线设备）"))
+	o:value("__none__", translate("（没有可添加的在线设备）"))
 end
 for _, d in ipairs(devices) do
 	local label = d.mac
@@ -369,7 +366,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Notes
 -- ---------------------------------------------------------------------------
-s = m:section(SimpleSection, translate("使用说明"))
+s = m:section(SimpleSection)
 o = s:option(DummyValue, "_notes")
 o.rawhtml = true
 o.cfgvalue = function()
@@ -395,17 +392,45 @@ o.cfgvalue = function()
 .ms-down { color: var(--text_color, #888); opacity: .65; }
 .ms-err { color: #e74c3c; font-weight: bold; }
 .ms-ip { color: var(--active_color, #5ea69b); }
-.ms-host { opacity: .7; font-size: 90%; }
+.ms-host { opacity: .7; font-size: 90%; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-test { font-size: 90%; opacity: .8; }
 .ms-status { line-height: 1.7; }
 .ms-status > div { margin: 2px 0; }
+.ms-actions { margin-top: 6px; }
 .cbi-tblsection .cbi-button { margin: 2px 6px 2px 0; }
 .cbi-tblsection { overflow-x: auto; }
 /* button-only tables: no header row; the rules table keeps its header */
 .cbi-tblsection:not(#cbi-macsplit-rule) tr.cbi-section-table-titles { display: none; }
 .cbi-tblsection:not(#cbi-macsplit-rule) td.cbi-value-field { padding: 2px 6px; }
+/* Rules table: the design theme turns it into display:block (scroll wrapper)
+   and forces th widths to auto !important, which made the tiny "启用" column
+   eat the space the MAC/line columns need. Restore a real fixed table and
+   pin every column. */
+#cbi-macsplit-rule table.cbi-section-table { display: table !important; table-layout: fixed !important; width: 100% !important; min-width: 720px; }
+#cbi-macsplit-rule .cbi-section-table-row > td { padding-left: 4px; padding-right: 4px; }
+#cbi-macsplit-rule .cbi-input-text, #cbi-macsplit-rule select { font-size: 90%; }
+#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(1),
+#cbi-macsplit-rule .cbi-section-table-row > td:nth-child(1) { width: 50px !important; }
+#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(2),
+#cbi-macsplit-rule .cbi-section-table-row > td:nth-child(2) { width: 168px !important; }
+#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(3),
+#cbi-macsplit-rule .cbi-section-table-row > td:nth-child(3) { width: 130px !important; }
+#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(4),
+#cbi-macsplit-rule .cbi-section-table-row > td:nth-child(4) { width: 185px !important; }
+#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(6),
+#cbi-macsplit-rule .cbi-section-table-row > td:nth-child(6) { width: 78px !important; }
+#cbi-macsplit-rule td:nth-child(6) .cbi-button { margin: 0; padding: 2px 6px; }
+/* narrow screens: the optional remark column is the first thing to drop */
+@media (max-width: 900px) {
+	#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(3),
+	#cbi-macsplit-rule .cbi-section-table-row > td:nth-child(3) { display: none; }
+}
+#cbi-macsplit-rule .cbi-input-text, #cbi-macsplit-rule select { width: 100%; box-sizing: border-box; }
+#cbi-macsplit-rule td:nth-child(2) input { font-family: ui-monospace, Menlo, Consolas, monospace; }
 </style>
 <div class="ms-app" style="line-height:1.75">
+<details>
+<summary><b>使用说明与注意事项</b></summary>
 <p><b>怎么用：</b>“添加”一行 → 填 MAC → 选“代理线路” → “保存并应用”。就这么简单。</p>
 <pre class="ms-pre">电视    aa:bb:cc:00:00:01 ── 香港节点
 手机    aa:bb:cc:00:00:02 ── 日本节点
@@ -418,6 +443,7 @@ o.cfgvalue = function()
 <li><b>生效：</b>“保存并应用”才会写入 ACL 并重启 PassWall2（配置没变化时会跳过重启）；“保存”只写配置。</li>
 <li><b>日志：</b><code>/tmp/macsplit-apply.log</code>。</li>
 </ul>
+</details>
 </div>
 ]=]
 end

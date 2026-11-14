@@ -1,6 +1,6 @@
 # luci-app-macsplit
 
-给同一个局域网里的每个 MAC 单独指定一条 PassWall2 线路，有线和无线客户端都生效。
+多设备分流 / Multi-device routing — 给同一个局域网里的每个设备（MAC）单独指定一条 PassWall2 线路，有线和无线客户端都生效。
 不用改 WiFi、不用划子网，也不需要理解 SSID/桥接。
 
 ## 原理

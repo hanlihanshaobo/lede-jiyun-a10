@@ -420,6 +420,9 @@ o.cfgvalue = function()
 #cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(6),
 #cbi-macsplit-rule .cbi-section-table-row > td:nth-child(6) { width: 78px !important; }
 #cbi-macsplit-rule td:nth-child(6) .cbi-button { margin: 0; padding: 2px 6px; }
+/* the empty-table placeholder is a single <td> without colspan, which the
+   fixed layout squeezes into the 50px enable column */
+#cbi-macsplit-rule tr.placeholder { display: none; }
 /* narrow screens: the optional remark column is the first thing to drop */
 @media (max-width: 900px) {
 	#cbi-macsplit-rule .cbi-section-table-titles .cbi-section-table-cell:nth-child(3),

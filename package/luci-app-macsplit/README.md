@@ -1,0 +1,72 @@
+# luci-app-macsplit
+
+在同一个 LAN 里按客户端 **MAC 地址**分流到不同的 PassWall2 线路，有线和无线客户端都适用。
+
+## 原理
+
+PassWall2 的访问控制（ACL）源支持 `mac:` 类型，最终生成 nftables 的
+`ether saddr` 匹配。因此不需要给每个客户端单独划子网/SSID：
+
+```text
+电视    aa:bb:cc:00:00:01 ── ACL(mode=1) ── 香港节点
+手机    aa:bb:cc:00:00:02 ── ACL(mode=1) ── 日本节点
+其它设备（未匹配）        ── ACL(mode=0) ── 直连
+```
+
+- 同一线路的多个 MAC 合并成一条 ACL，只启动一个 core/dnsmasq 实例
+- 规则按 MAC 匹配，二层转发，所以换 IP、DHCP 续租都不影响
+- 不需要改 network/wireless/firewall，只写 `passwall2` 配置
+
+## 入口
+
+LuCI：**网络 → 按 MAC 分流**
+
+## 配置
+
+```uci
+config global 'global'
+	option enabled '0'            # 默认停用
+	option interface 'lan'        # ACL 绑定的网络接口（解析为 br-lan）
+	option unmatched_direct '1'   # 全局关闭时追加 catch-all 直连 ACL
+
+config rule
+	option enabled '1'
+	option mac 'aa:bb:cc:dd:ee:ff'
+	option name '电视'
+	option node '__direct__'      # 或 PassWall2 节点名
+```
+
+生成/管理的 ACL 段名：
+
+| 线路 | ACL 段名 |
+|---|---|
+| 直连 | `macsplit_direct` |
+| 跟随全局 | `macsplit_global` |
+| 普通节点 | `macsplit_<6位md5>` |
+| 未匹配直连 | `macsplit_unmatched_direct` |
+
+所有 `macsplit_*` ACL 都由本页管理，取消“启用本页配置”会全部移除。
+
+## 应用流程
+
+1. 校验 MAC / 线路
+2. 备份 `/etc/config/passwall2` 和 `/etc/config/macsplit`
+3. 按线路分组，合并同一线路的 MAC
+4. 写入 ACL（`sources` 为 MAC 列表，`interface` 为配置的接口）
+5. PassWall2 全局关闭时追加 `macsplit_unmatched_direct`
+6. `uci commit passwall2` → 重启 PassWall2
+7. 失败自动回滚
+
+日志：`/tmp/macsplit-apply.log`
+
+## 注意
+
+- PassWall2 要先配好节点并保持运行；本页只写 ACL。
+- 默认停用；勾选“启用本页配置”并“保存并应用”后生效。
+- “未匹配直连”只覆盖客户端；路由器本机流量仍受 PassWall2“本机代理”设置影响。
+- 与 `luci-app-multiwifi` 同用时，两边都会追加“未匹配直连”catch-all；应用时会自动把
+  这类 ACL 移到列表最后，避免挡住后面新增的规则，但建议只在一个页面开启该选项。
+- “测试”会用该 MAC 在临时 netns/veth 里发 DNS+HTTP 请求；测试期间该 MAC 的真实设备
+  可能瞬断，建议设备离线时测。
+- 状态列的“在线/有租约”来自 `/tmp/dhcp.leases` 和 `ip neigh`。
+- 修改后必须“保存并应用”才会重建 ACL；“保存”只写配置。

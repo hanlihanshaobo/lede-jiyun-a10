@@ -553,4 +553,26 @@ install -m 0755 "$ROOT/package/luci-app-multiwifi/root/usr/libexec/multiwifi-app
 install -m 0644 "$ROOT/package/luci-app-multiwifi/root/etc/config/multiwifi" \
 	"$LEDE/files/etc/config/multiwifi"
 
+# ---------------------------------------------------------------------------
+# 11. luci-app-macsplit as a rootfs overlay
+#
+# Same approach as multiwifi: the pure Lua/shell files go into the global
+# files/ overlay so the image does not depend on Kconfig selecting the package.
+# It only writes PassWall2 ACLs (mac: sources), no network/wireless changes.
+# ---------------------------------------------------------------------------
+say "install luci-app-macsplit overlay"
+mkdir -p \
+	"$LEDE/files/usr/lib/lua/luci/controller" \
+	"$LEDE/files/usr/lib/lua/luci/model/cbi/macsplit" \
+	"$LEDE/files/usr/libexec" \
+	"$LEDE/files/etc/config"
+install -m 0644 "$ROOT/package/luci-app-macsplit/luasrc/controller/macsplit.lua" \
+	"$LEDE/files/usr/lib/lua/luci/controller/macsplit.lua"
+install -m 0644 "$ROOT/package/luci-app-macsplit/luasrc/model/cbi/macsplit/main.lua" \
+	"$LEDE/files/usr/lib/lua/luci/model/cbi/macsplit/main.lua"
+install -m 0755 "$ROOT/package/luci-app-macsplit/root/usr/libexec/macsplit-apply" \
+	"$LEDE/files/usr/libexec/macsplit-apply"
+install -m 0644 "$ROOT/package/luci-app-macsplit/root/etc/config/macsplit" \
+	"$LEDE/files/etc/config/macsplit"
+
 say "done"

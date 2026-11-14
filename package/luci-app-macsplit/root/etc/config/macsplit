@@ -1,0 +1,4 @@
+config global 'global'
+	option enabled '0'
+	option interface 'lan'
+	option unmatched_direct '1'

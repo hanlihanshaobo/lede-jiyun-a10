@@ -1,0 +1,415 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# Apply /etc/config/macsplit.
+#
+# One MAC (or a group of MACs on the same line) -> one PassWall2 ACL rule with
+# a "mac:" source. PassWall2 turns that into an `ether saddr` nft match, so the
+# rule works for wired and wireless clients without separate subnets.
+# ---------------------------------------------------------------------------
+set -eu
+
+CONFIG=macsplit
+PREFIX=macsplit_
+STATE=/tmp/macsplit
+BACKUP_ROOT=/etc/macsplit/backup
+LOG=/tmp/macsplit-apply.log
+
+MODE=${1:-apply}
+BACKUP_MADE=0
+APPLY_OK=0
+
+mkdir -p "$STATE" "$BACKUP_ROOT"
+
+# test writes its report to stdout so the LuCI button can capture the result
+if [ "$MODE" != "test" ]; then
+	: > "$LOG"
+	exec >> "$LOG" 2>&1
+fi
+
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+die() { log "ERROR: $*"; exit 1; }
+
+uci_get() {
+	uci -q get "$1" 2>/dev/null || true
+}
+
+# normalise AA-BB-.., aabb.., aa:bb:.. to aa:bb:cc:dd:ee:ff
+norm_mac() {
+	local v
+	v=$(printf '%s' "$1" | tr 'A-F' 'a-f' | tr -cd '0-9a-f')
+	[ ${#v} -eq 12 ] || return 1
+	printf '%s\n' "$v" | sed 's/../&:/g;s/:$//'
+}
+
+detect_acl_schema() {
+	ACL_SCHEMA=""
+	[ -f /etc/config/passwall2 ] || return 0
+	if grep -q 'acl_rule' /usr/share/passwall2/app_acl.lua 2>/dev/null; then
+		ACL_SCHEMA=acl_rule
+	else
+		ACL_SCHEMA=acl
+	fi
+	return 0
+}
+
+# Same DNS defaults multiwifi uses: inherit the global PassWall2 settings so a
+# per-line ACL keeps remote DNS consistent with the rest of the system.
+set_acl_dns_defaults() {
+	local net="$1" opt val
+	for opt in direct_dns_query_strategy remote_dns_protocol remote_dns remote_dns_doh remote_dns_detour remote_fakedns remote_dns_query_strategy remote_rewrite_ttl; do
+		val=$(uci_get "passwall2.@global[0].$opt")
+		case "$opt:$val" in
+			direct_dns_query_strategy:) val=UseIP ;;
+			remote_dns_protocol:) val=tcp ;;
+			remote_dns:) val=1.1.1.1 ;;
+			remote_dns_doh:) val=https://1.1.1.1/dns-query ;;
+			remote_dns_detour:) val=remote ;;
+			remote_fakedns:) val=0 ;;
+			remote_dns_query_strategy:) val=UseIPv4 ;;
+			remote_rewrite_ttl:) val=30 ;;
+		esac
+		[ -n "$val" ] && uci -q set "passwall2.$net.$opt=$val"
+	done
+	return 0
+}
+
+# ---------------------------------------------------------------------------
+# backup / restore
+# ---------------------------------------------------------------------------
+backup_configs() {
+	local ts dir c i d
+	ts=$(date +%Y%m%d-%H%M%S)
+	dir="$BACKUP_ROOT/$ts"
+	mkdir -p "$dir"
+	for c in passwall2; do
+		[ -f "/etc/config/$c" ] && cp -f "/etc/config/$c" "$dir/$c"
+	done
+	[ -f "/etc/config/$CONFIG" ] && cp -f "/etc/config/$CONFIG" "$dir/$CONFIG"
+	echo "$dir" > "$STATE/last-backup"
+	BACKUP_MADE=1
+	log "已备份配置到 $dir"
+
+	i=0
+	for d in $(ls -1dt "$BACKUP_ROOT"/* 2>/dev/null); do
+		i=$((i + 1))
+		[ "$i" -gt 5 ] && rm -rf "$d" || true
+	done
+	return 0
+}
+
+restore_configs() {
+	local dir c
+	dir=$(cat "$STATE/last-backup" 2>/dev/null || true)
+	[ -n "$dir" ] && [ -d "$dir" ] || { log "没有可恢复的备份"; return 1; }
+
+	for c in passwall2 "$CONFIG"; do
+		[ -f "$dir/$c" ] && cp -f "$dir/$c" "/etc/config/$c"
+	done
+	for c in passwall2 "$CONFIG"; do
+		[ -f "/etc/config/$c" ] && uci -q commit "$c" || true
+	done
+	log "已恢复 $dir"
+	/etc/init.d/passwall2 restart >/dev/null 2>&1 || true
+	return 0
+}
+
+on_exit() {
+	local rc=$?
+	if [ "$APPLY_OK" != "1" ] && [ "$BACKUP_MADE" = "1" ]; then
+		log "应用失败，开始回滚"
+		restore_configs || true
+	fi
+	exit "$rc"
+}
+
+# A catch-all ACL returns before any later rule, so every "*_unmatched_direct"
+# must sit at the end of the ACL list. Move them last with uci reorder (this
+# also fixes the position when multiwifi created its own catch-all).
+reorder_catchalls() {
+	local total pos s
+	total=$(uci -q show passwall2 2>/dev/null | grep -c '^passwall2\.[^.]*=' || true)
+	[ "$total" -gt 0 ] || return 0
+	pos=$((total - 1))
+	for s in $(uci -q show passwall2 2>/dev/null |
+		sed -n "s/^passwall2\.\([^.]*\)=$ACL_SCHEMA$/\1/p" |
+		grep '_unmatched_direct$' || true); do
+		uci -q reorder "passwall2.$s=$pos" || true
+	done
+	return 0
+}
+
+reload_services() {
+	log "提交 PassWall2 配置并重启"
+	uci -q commit passwall2 || true
+	if [ -x /etc/init.d/passwall2 ]; then
+		/etc/init.d/passwall2 restart >/dev/null 2>&1 || true
+	fi
+	sleep 1
+}
+
+group_sid() {
+	case "$1" in
+		__direct__) echo "macsplit_direct" ;;
+		__global__) echo "macsplit_global" ;;
+		*) echo "macsplit_$(printf '%s' "$1" | md5sum | cut -c1-6)" ;;
+	esac
+}
+
+# ---------------------------------------------------------------------------
+# test: send DNS+HTTP with the rule's MAC on a temporary veth
+# ---------------------------------------------------------------------------
+if [ "$MODE" = "test" ]; then
+	SID=${2:-}
+	[ -n "$SID" ] || { echo "usage: $0 test <section>" >&2; exit 2; }
+	MAC=$(norm_mac "$(uci_get "$CONFIG.$SID.mac")") || {
+		echo "invalid mac" >&2
+		exit 2
+	}
+	IFACE=$(uci_get "$CONFIG.@global[0].interface")
+	[ -n "$IFACE" ] || IFACE=lan
+	BR=$(uci_get "network.$IFACE.device")
+	[ -n "$BR" ] || BR=$IFACE
+	[ -d "/sys/class/net/$BR" ] || BR=br-lan
+	GW=$(uci_get "network.$IFACE.ipaddr")
+	[ -n "$GW" ] || GW=192.168.68.1
+
+	STATE=/tmp/macsplit-test
+	mkdir -p "$STATE"
+	TESTLOG="$STATE/log"
+	: > "$TESTLOG"
+
+	NS=mactest
+	VH=veth-mac-host
+	VC=veth-mac
+	cleanup() {
+		ip netns del "$NS" 2>/dev/null || true
+		ip link del "$VH" 2>/dev/null || true
+	}
+	cleanup
+	trap cleanup EXIT INT TERM
+
+	ip netns add "$NS" 2>>"$TESTLOG" || { echo "netns add failed"; exit 2; }
+	ip link add "$VC" type veth peer name "$VH" 2>>"$TESTLOG"
+	ip link set "$VH" master "$BR" up 2>>"$TESTLOG"
+	ip link set "$VC" netns "$NS" 2>>"$TESTLOG"
+	ip netns exec "$NS" ip link set lo up
+	ip netns exec "$NS" ip link set "$VC" address "$MAC" 2>>"$TESTLOG"
+	ip netns exec "$NS" ip link set "$VC" up 2>>"$TESTLOG"
+
+	# pick a free address high in the /24 (DHCP pools usually end at .249)
+	IP=""
+	for last in 250 251 252 253 254; do
+		cand="${GW%.*}.$last"
+		if ! ping -c 1 -W 1 "$cand" >/dev/null 2>&1; then
+			IP="$cand"
+			break
+		fi
+	done
+	[ -n "$IP" ] || IP="${GW%.*}.254"
+	ip netns exec "$NS" ip addr add "$IP/24" dev "$VC" 2>>"$TESTLOG"
+	ip netns exec "$NS" ip route add default via "$GW" 2>>"$TESTLOG"
+
+	DNS_OK=0
+	HTTP_OK=0
+	if ip netns exec "$NS" nslookup example.com "$GW" >/dev/null 2>&1; then
+		DNS_OK=1
+	fi
+	try=1
+	while [ "$try" -le 3 ]; do
+		if ip netns exec "$NS" curl -sS --max-time 10 -o /dev/null http://1.1.1.1 2>>"$TESTLOG"; then
+			HTTP_OK=1
+			break
+		fi
+		try=$((try + 1))
+	done
+
+	echo "mac=$MAC ip=$IP dns=$DNS_OK http=$HTTP_OK"
+	[ "$DNS_OK" = "1" ] && [ "$HTTP_OK" = "1" ]
+	exit $?
+fi
+
+if [ "$MODE" != "apply" ]; then
+	echo "usage: $0 [apply|restore|test <section>]" >&2
+	exit 2
+fi
+
+[ -f "/etc/config/$CONFIG" ] || die "缺少 /etc/config/$CONFIG"
+
+if pidof clash >/dev/null 2>&1 || pidof mihomo >/dev/null 2>&1 || pidof clash_tun >/dev/null 2>&1; then
+	log "WARNING: OpenClash 正在运行，PassWall2 可能和它抢 nftables/DNS"
+fi
+
+detect_acl_schema
+
+HAS_PASSWALL2=0
+PASSWALL2_ENABLED=0
+if [ -f /etc/config/passwall2 ] && [ -n "$(uci_get 'passwall2.@global[0]')" ]; then
+	HAS_PASSWALL2=1
+	PASSWALL2_ENABLED=$(uci_get "passwall2.@global[0].enabled")
+	[ -n "$PASSWALL2_ENABLED" ] || PASSWALL2_ENABLED=0
+fi
+
+GLOBAL_ENABLED=$(uci_get "$CONFIG.@global[0].enabled")
+[ -n "$GLOBAL_ENABLED" ] || GLOBAL_ENABLED=0
+IFACE=$(uci_get "$CONFIG.@global[0].interface")
+[ -n "$IFACE" ] || IFACE=lan
+UNMATCHED=$(uci_get "$CONFIG.@global[0].unmatched_direct")
+[ -n "$UNMATCHED" ] || UNMATCHED=1
+
+backup_configs
+trap on_exit EXIT INT TERM
+
+ROWS="$STATE/rows.$$"
+: > "$ROWS"
+COUNT=0
+
+if [ "$GLOBAL_ENABLED" = "1" ]; then
+	for sid in $(uci -q show "$CONFIG" 2>/dev/null |
+		sed -n "s/^$CONFIG\.\([^.]*\)=rule$/\1/p"); do
+		enabled=$(uci_get "$CONFIG.$sid.enabled")
+		[ "$enabled" = "1" ] || continue
+		raw=$(uci_get "$CONFIG.$sid.mac")
+		mac=$(norm_mac "$raw") || die "MAC 格式错误: $raw"
+		node=$(uci_get "$CONFIG.$sid.node")
+		[ -n "$node" ] || node="__direct__"
+		name=$(uci_get "$CONFIG.$sid.name")
+		printf '%s\t%s\t%s\t%s\n' "$sid" "$mac" "$node" "$name" >> "$ROWS"
+		COUNT=$((COUNT + 1))
+	done
+fi
+
+if [ "$COUNT" -gt 0 ]; then
+	if ! awk -F '\t' '{ if (seen[$2]++) exit 1 }' "$ROWS"; then
+		die "MAC 重复：同一 MAC 只能绑定一条线路"
+	fi
+fi
+
+EXPECTED_ACL=""
+
+# Nothing enabled (or PassWall2 missing): remove everything this app created.
+if [ "$COUNT" -eq 0 ] || [ "$HAS_PASSWALL2" != "1" ] || [ -z "$ACL_SCHEMA" ]; then
+	for s in $(uci -q show passwall2 2>/dev/null |
+		sed -n "s/^passwall2\.\([^.]*\)=$ACL_SCHEMA$/\1/p" |
+		grep "^$PREFIX" || true); do
+		uci -q delete "passwall2.$s" || true
+	done
+	uci -q delete "passwall2.macsplit_unmatched_direct" || true
+	if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ]; then
+		other=0
+		for s in $(uci -q show passwall2 2>/dev/null |
+			sed -n "s/^passwall2\.\([^.]*\)=$ACL_SCHEMA$/\1/p"); do
+			case "$s" in
+				macsplit_*) ;;
+				*) other=1 ;;
+			esac
+		done
+		if [ "$other" = "0" ]; then
+			uci -q set "passwall2.@global[0].acl_enable=0"
+		fi
+	fi
+	log "已停用：移除所有 $PREFIX* ACL"
+	reload_services
+	APPLY_OK=1
+	exit 0
+fi
+
+# ---- one ACL per line, MACs merged ---------------------------------------
+GROUP_COUNT=0
+for node in $(cut -f3 "$ROWS" | sort -u); do
+	case "$node" in
+		'__direct__')
+			mode=0
+			;;
+		'__global__')
+			mode=2
+			GLOBAL_NODE=$(uci_get "passwall2.@global[0].node")
+			[ -n "$GLOBAL_NODE" ] && [ "$(uci_get "passwall2.$GLOBAL_NODE")" = "nodes" ] \
+				|| die "PassWall2 未设置有效的全局节点"
+			;;
+		*)
+			mode=1
+			[ "$(uci_get "passwall2.$node")" = "nodes" ] \
+				|| die "PassWall2 线路不存在: $node"
+			[ "$(uci_get "passwall2.$node.disabled")" = "1" ] \
+				&& die "PassWall2 线路已禁用: $node"
+			;;
+	esac
+
+	sid=$(group_sid "$node")
+	uci -q delete "passwall2.$sid" || true
+	uci -q set "passwall2.$sid=$ACL_SCHEMA"
+	uci -q set "passwall2.$sid.enabled=1"
+	uci -q set "passwall2.$sid.interface=$IFACE"
+	uci -q set "passwall2.$sid.mode=$mode"
+	uci -q set "passwall2.$sid.tcp_redir_ports=1:65535"
+	uci -q set "passwall2.$sid.udp_redir_ports=1:65535"
+	uci -q delete "passwall2.$sid.tcp_no_redir_ports" || true
+	uci -q delete "passwall2.$sid.udp_no_redir_ports" || true
+	if [ "$mode" = "1" ]; then
+		uci -q set "passwall2.$sid.node=$node"
+	else
+		uci -q delete "passwall2.$sid.node" || true
+	fi
+
+	# remarks: "MAC: 电视, 手机" (fall back to the MAC when unnamed)
+	remarks=$(awk -F '\t' -v n="$node" '
+		$3 == n { printf "%s%s", sep, ($4 != "" ? $4 : $2); sep = ", " }
+	' "$ROWS")
+	uci -q set "passwall2.$sid.remarks=MAC: $remarks"
+
+	uci -q delete "passwall2.$sid.sources" || true
+	awk -F '\t' -v n="$node" '$3 == n { print $2 }' "$ROWS" |
+		while IFS= read -r mac; do
+			uci -q add_list "passwall2.$sid.sources=$mac"
+		done
+	set_acl_dns_defaults "$sid"
+
+	EXPECTED_ACL="$EXPECTED_ACL $sid"
+	GROUP_COUNT=$((GROUP_COUNT + 1))
+	log "线路 [$node] mode=$mode：$(awk -F '\t' -v n="$node" '$3 == n' "$ROWS" | wc -l) 个 MAC"
+done
+
+# ---- unmatched traffic stays direct when PassWall2 global is off ----------
+if [ "$UNMATCHED" = "1" ] && [ "$PASSWALL2_ENABLED" != "1" ]; then
+	uci -q delete "passwall2.macsplit_unmatched_direct" || true
+	uci -q set "passwall2.macsplit_unmatched_direct=$ACL_SCHEMA"
+	uci -q set "passwall2.macsplit_unmatched_direct.enabled=1"
+	uci -q set "passwall2.macsplit_unmatched_direct.remarks=MAC: unmatched direct"
+	uci -q set "passwall2.macsplit_unmatched_direct.mode=0"
+	uci -q set "passwall2.macsplit_unmatched_direct.tcp_redir_ports=1:65535"
+	uci -q set "passwall2.macsplit_unmatched_direct.udp_redir_ports=1:65535"
+	uci -q delete "passwall2.macsplit_unmatched_direct.node" || true
+	uci -q delete "passwall2.macsplit_unmatched_direct.interface" || true
+	uci -q delete "passwall2.macsplit_unmatched_direct.sources" || true
+	uci -q delete "passwall2.macsplit_unmatched_direct.tcp_no_redir_ports" || true
+	uci -q delete "passwall2.macsplit_unmatched_direct.udp_no_redir_ports" || true
+	set_acl_dns_defaults macsplit_unmatched_direct
+	EXPECTED_ACL="$EXPECTED_ACL macsplit_unmatched_direct"
+	log "PassWall2 全局关闭：追加未匹配流量直连 ACL"
+fi
+
+# ---- remove our stale ACLs ------------------------------------------------
+for s in $(uci -q show passwall2 2>/dev/null |
+	sed -n "s/^passwall2\.\([^.]*\)=$ACL_SCHEMA$/\1/p" |
+	grep "^$PREFIX" || true); do
+	case " $EXPECTED_ACL " in
+		*" $s "*) ;;
+		*) uci -q delete "passwall2.$s" || true ;;
+	esac
+done
+
+uci -q set "passwall2.@global[0].acl_enable=1"
+reorder_catchalls
+
+reload_services
+
+{
+	echo "rules=$COUNT"
+	echo "acls=$GROUP_COUNT"
+	while IFS='	' read -r sid mac node name; do
+		echo "$mac $node ${name:--}"
+	done < "$ROWS"
+} > "$STATE/status"
+
+APPLY_OK=1
+log "完成：$COUNT 个 MAC，$GROUP_COUNT 条 ACL"

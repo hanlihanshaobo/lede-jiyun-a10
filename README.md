@@ -23,6 +23,7 @@ files/stock_loader.bin          stock loader partition (GPT header + idbloader)
 files/stock_uboot.bin           stock u-boot FIT (U-Boot + ATF + OP-TEE + MCU)
 files/mk-emmc-img.py            MBR + root.ext4 -> eMMC flashing image
 package/luci-app-multiwifi/     Multi-SSID + PassWall2 routing app (installed by prepare.sh)
+package/luci-app-macsplit/      Per-MAC PassWall2 routing app (wired + wireless, installed by prepare.sh)
 configs/config.seed             seed .config (target/device, BTF off, MMC)
 tools/mkfit.py                  repack kernel+DTB into the stock (data-position) FIT
 tools/mk-spi-img.py             loader + u-boot + FIT -> SPI NOR flashing image

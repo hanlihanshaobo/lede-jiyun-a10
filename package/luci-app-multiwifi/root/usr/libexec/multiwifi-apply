@@ -762,10 +762,6 @@ if [ "$HAS_PASSWALL2" = "1" ] && [ -n "$ACL_SCHEMA" ]; then
 	fi
 fi
 
-for c in network dhcp firewall wireless passwall2; do
-	[ -f "/etc/config/$c" ] && uci -q commit "$c" || true
-done
-
 # ---- stock default SSIDs --------------------------------------------------
 # Optional: disable the firmware's default_radio0/1 so the generated BSS set
 # does not compete for the radio's BSS slots.  multiwifi.global.default_off
@@ -788,6 +784,26 @@ elif [ "$(uci_get "multiwifi.global.default_off")" = "1" ]; then
 fi
 
 [ -f /etc/config/multiwifi ] && uci -q commit multiwifi || true
+
+# Catch-all ACLs must stay after the specific ones (first match wins); this
+# also keeps luci-app-macsplit's catch-all at the end when both apps are used.
+reorder_catchalls() {
+	local total pos s
+	total=$(uci -q show passwall2 2>/dev/null | grep -c '^passwall2\.[^.]*=' || true)
+	[ "$total" -gt 0 ] || return 0
+	pos=$((total - 1))
+	for s in $(uci -q show passwall2 2>/dev/null |
+		sed -n "s/^passwall2\.\([^.]*\)=$ACL_SCHEMA$/\1/p" |
+		grep '_unmatched_direct$' || true); do
+		uci -q reorder "passwall2.$s=$pos" || true
+	done
+	return 0
+}
+reorder_catchalls
+
+for c in network dhcp firewall wireless passwall2; do
+	[ -f "/etc/config/$c" ] && uci -q commit "$c" || true
+done
 
 reload_services
 

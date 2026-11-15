@@ -29,6 +29,8 @@ on:
       - "configs/config.podkop.seed"
       - "scripts/prepare.sh"
       - "scripts/mk-sysupgrade.sh"
+      - "scripts/initramfs-init"
+      - "scripts/mk-initramfs.sh"
       - "files/armv8-jiyun-a10.mk"
       - "files/lib/upgrade/platform.sh"
       - ".github/workflows/build-podkop.yml"
@@ -268,6 +270,11 @@ jobs:
             *)    cp -v "$EMMC" output/jiyun-a10-podkop-emmc.img ;;
           esac
           test "$(wc -c < output/jiyun-a10-podkop-emmc.img)" -gt 268435456
+          # The FIT-aware sysupgrade hook must be inside the rootfs, not only
+          # in target/linux/rockchip/base-files (the first podkop image shipped
+          # the generic platform.sh because that overlay was not applied).
+          grep -aq "JY_BOARD" output/jiyun-a10-podkop-emmc.img \
+            || { echo "ERROR: sysupgrade platform hook missing from the rootfs"; exit 1; }
 
           TARGET_DIR=$(ls -d lede/build_dir/target-*/root-rockchip | head -1)
           test -d "$TARGET_DIR"
@@ -300,6 +307,8 @@ jobs:
 
           tar -tf output/jiyun-a10-podkop-sysupgrade.tar | grep -qx sysupgrade-jiyun_a10/root
           tar -tf output/jiyun-a10-podkop-sysupgrade.tar | grep -qx sysupgrade-jiyun_a10/kernel
+          grep -aq "JY_BOARD" output/jiyun-a10-podkop-sysupgrade.tar \
+            || { echo "ERROR: sysupgrade tar rootfs lacks the platform hook"; exit 1; }
 
           sha256sum output/* | tee output/SHA256SUMS
           ls -al output

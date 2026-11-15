@@ -97,11 +97,18 @@ fi
 
 resized=0
 if [ -x /sbin/resize2fs ]; then
-	msg "resize2fs $ROOT"
-	if /sbin/resize2fs "$ROOT" >>"$LOG" 2>&1; then
+	msg "resize2fs -f $ROOT"
+	# -f is required after sysupgrade: platform_do_upgrade/platform_copy_config
+	# mounted the freshly written rootfs rw, and resize2fs refuses to grow a
+	# filesystem whose last-check state is not "clean" (the first boot after a
+	# USB flash used to get away without it).  e2fsck -fy above has already
+	# fixed the filesystem, so forcing the resize is safe.
+	if /sbin/resize2fs -f "$ROOT" >>"$LOG" 2>&1; then
 		resized=1
+		log "resize2fs rc=0"
+	else
+		log "resize2fs rc=$?"
 	fi
-	log "resize2fs done rc=$?"
 else
 	msg "resize2fs missing"
 fi

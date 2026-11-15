@@ -27,6 +27,52 @@ JY_BOARD="jiyun_a10"
 JY_MTD="Kernel"
 JY_FIT_MAGIC="d00dfeed"
 
+# Stage 2 runs in a tiny ramfs: /tmp is lost on reboot, so keep a small log in
+# the unused 1 MiB gap before p1 (LBA 1020; the initramfs uses LBA 1000).
+# It survives the upgrade and can be read with
+#   dd if=/dev/mmcblk0 bs=512 skip=1020 count=8 | strings
+JY_LOG=/tmp/jy-upgrade.log
+log_upgrade() {
+	echo "$(date '+%H:%M:%S') $*" >> "$JY_LOG" 2>/dev/null
+	dd if="$JY_LOG" of=/dev/mmcblk0 bs=512 seek=1020 conv=fsync 2>/dev/null
+}
+
+# Restore the sysupgrade config archive directly onto p1.  The stock preinit
+# path (stage a sysupgrade.tgz, let 80_mount_root extract it) did not take
+# effect on this board: the file was deleted by /etc/init.d/done without the
+# marker in /etc/config/system changing.  Extracting here is deterministic and
+# happens before the reboot, while p1 is unmounted.
+jy_restore_config() {
+	local dev="$1"
+	local backup="${UPGRADE_BACKUP:-/tmp/sysupgrade.tgz}"
+	local backup_file="${BACKUP_FILE:-sysupgrade.tgz}"
+
+	[ -f "$backup" ] || {
+		log_upgrade "restore_config: no backup at $backup"
+		return 1
+	}
+	mount -o rw,noatime "/dev/$dev" /mnt || {
+		log_upgrade "restore_config: mount failed"
+		return 1
+	}
+	if tar -xzf "$backup" -C /mnt; then
+		sync
+		rm -f "/mnt/$backup_file"
+		log_upgrade "restore_config: extracted"
+		umount /mnt
+		return 0
+	fi
+	# Fall back to the stock preinit mechanism.
+	if cp -af "$backup" "/mnt/$backup_file"; then
+		log_upgrade "restore_config: staged for preinit"
+	else
+		log_upgrade "restore_config: extract and stage both failed"
+	fi
+	sync
+	umount /mnt
+	return 1
+}
+
 platform_check_image() {
 	local img="$1"
 	local entries
@@ -65,8 +111,10 @@ platform_do_upgrade() {
 
 	export_bootdevice && export_partdevice rootdev 1 || {
 		echo "cannot find the eMMC rootfs partition"
+		log_upgrade "do_upgrade: cannot find rootfs partition"
 		return 1
 	}
+	log_upgrade "do_upgrade: start rootdev=$rootdev backup=${UPGRADE_BACKUP:-none}"
 
 	# The CONTROL file carries the sizes so a truncated tar is rejected
 	# before anything is written to flash.
@@ -100,6 +148,7 @@ platform_do_upgrade() {
 	}
 	rm -f "$fit"
 	sync
+	log_upgrade "do_upgrade: FIT written"
 
 	# 2. Rootfs: extract first (so tar errors are visible), verify the size,
 	#    then write the ext4 straight onto p1.
@@ -121,6 +170,10 @@ platform_do_upgrade() {
 	}
 	rm -f "$rootfs"
 	sync
+	log_upgrade "do_upgrade: rootfs written"
+
+	# 3. Restore the sysupgrade config archive while p1 is still unmounted.
+	jy_restore_config "$rootdev"
 
 	return 0
 }
@@ -128,9 +181,10 @@ platform_do_upgrade() {
 platform_copy_config() {
 	local partdev
 
-	export_bootdevice && export_partdevice partdev 1 || return 1
-	mount -o rw,noatime "/dev/$partdev" /mnt || return 1
-	cp -af "$UPGRADE_BACKUP" "/mnt/$BACKUP_FILE"
-	sync
-	umount /mnt
+	log_upgrade "copy_config: start"
+	export_bootdevice && export_partdevice partdev 1 || {
+		log_upgrade "copy_config: cannot find p1"
+		return 1
+	}
+	jy_restore_config "$partdev"
 }

@@ -635,10 +635,19 @@ if [ "$PROFILE" = podkop ]; then
 	# sysupgrade hook: a Podkop image updates both the eMMC rootfs and the
 	# SPI NOR "Kernel" FIT.  The main profile keeps the generic platform.sh
 	# (it has no FIT-bearing upgrade package).
+	#
+	# Install it in *both* places: the target base-files overlay (so the
+	# base-files package itself carries it) and the global files/ overlay,
+	# which prepare_rootfs() applies after every package.  The first attempt
+	# only copied it into target/linux/rockchip/base-files and the built image
+	# still had the generic script, so the global overlay is the load-bearing
+	# copy.
 	say "install sysupgrade platform hook"
-	mkdir -p "$BASE/lib/upgrade"
+	mkdir -p "$BASE/lib/upgrade" "$LEDE/files/lib/upgrade"
 	install -m 0755 "$ROOT/files/lib/upgrade/platform.sh" \
 		"$BASE/lib/upgrade/platform.sh"
+	install -m 0755 "$ROOT/files/lib/upgrade/platform.sh" \
+		"$LEDE/files/lib/upgrade/platform.sh"
 fi
 
 say "done"

@@ -275,6 +275,21 @@ say "install image helper"
 install -m 0755 "$ROOT/files/mk-emmc-img.py" "$LEDE/scripts/mk-emmc-img.py"
 
 # ---------------------------------------------------------------------------
+# 3b. drop the erofs-utils host tool
+#
+# Lean's tools/Makefile builds erofs-utils unconditionally.  Its source URL is
+# the git.kernel.org snapshot, which some GitHub runners cannot reach, while
+# the OpenWrt source mirrors do not carry this version (404).  The Jiyun A10
+# images are ext4 only (mk-emmc-img.py + IMAGE_ROOTFS), and no selected image
+# recipe invokes mkfs.erofs, so remove the host tool entirely.
+# ---------------------------------------------------------------------------
+TOOLS_MK="$LEDE/tools/Makefile"
+if grep -q 'erofs-utils' "$TOOLS_MK"; then
+	say "drop unneeded erofs-utils host tool"
+	sed -i '/erofs-utils/d' "$TOOLS_MK"
+fi
+
+# ---------------------------------------------------------------------------
 # 4. kernel config fragment
 #
 # target/linux/generic/config-<ver> sets the DSA core to "not set", which

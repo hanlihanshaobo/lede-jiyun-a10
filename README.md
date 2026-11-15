@@ -59,19 +59,20 @@ the same tree.
 
 ## CI
 
-Push to `main`, run the workflow manually (Actions → *Build Jiyun A10 OpenWrt* →
-*Run workflow*), or wait for the weekly schedule.
+Both workflows are **manual-only**: push and schedule triggers are removed.
+Run *Actions → Build Jiyun A10 OpenWrt → Run workflow* (or *Build Jiyun A10
+Podkop*) when a build is needed.
 
-`workflow_dispatch` takes a `packages` input; push and schedule default to
-`both`. Every build is downloaded from the Actions run page (*Summary* →
-*Artifacts*); this repository no longer publishes GitHub Releases. The two
-packages are built by independent jobs and uploaded as independent artifacts:
+The main `workflow_dispatch` takes a `packages` input (default `both`). Every
+build is downloaded from the Actions run page (*Summary* → *Artifacts*); this
+repository no longer publishes GitHub Releases. The two packages are built by
+independent jobs and uploaded as independent artifacts:
 
 | `packages` | Artifacts |
 |------------|-----------|
-| `emmc` (default) | `jiyun-a10-emmc` |
+| `emmc` | `jiyun-a10-emmc` |
 | `spi` | `jiyun-a10-spi` |
-| `both` | both |
+| `both` (default) | both |
 
 1. **build** — clones LEDE, installs feeds, runs `scripts/prepare.sh`, builds the
    kernel + rootfs, and uploads only what the selected packages need (an
@@ -181,7 +182,7 @@ was none, and step 2 then runs in loader mode (no 32 MB limit, 257 MB is fine).
 Step 1 replaces the `Kernel` partition, i.e. only the kernel changes on a normal
 upgrade; the loader/u-boot bytes are identical to the stock ones.
 
-README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
+There are no automatic builds, so documentation changes never start a run.
 
 ## Device notes
 

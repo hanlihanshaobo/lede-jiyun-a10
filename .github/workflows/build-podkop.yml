@@ -9,9 +9,8 @@ name: Build Jiyun A10 Podkop
 #     package jiyun-a10-podkop-sysupgrade.tar as the build-output-podkop
 #     Actions artifact (download it from the run summary)
 #
-# The main build.yml is intentionally untouched: pushing the shared files
-# (prepare.sh, armv8-jiyun-a10.mk) still runs the main build too, which is a
-# useful regression check for the default profile.
+# Both workflows are manual-only.  A push no longer starts either build;
+# run this workflow from Actions when a Podkop image is needed.
 on:
   workflow_dispatch:
     inputs:
@@ -23,21 +22,6 @@ on:
         description: "Upstream branch/tag/commit (branch or 40-char sha)"
         required: false
         default: "f61f09e850959d490c1b43a7eb20eefd46224d4f"
-  push:
-    branches: [main]
-    paths:
-      - "configs/config.podkop.seed"
-      - "package/podkop/**"
-      - "package/luci-app-podkop/**"
-      - "scripts/prepare.sh"
-      - "scripts/mk-sysupgrade.sh"
-      - "scripts/mkfit.py"
-      - "scripts/mk-spi-img.py"
-      - "scripts/initramfs-init"
-      - "scripts/mk-initramfs.sh"
-      - "files/armv8-jiyun-a10.mk"
-      - "files/lib/upgrade/platform.sh"
-      - ".github/workflows/build-podkop.yml"
 
 concurrency:
   group: build-podkop-${{ github.ref }}

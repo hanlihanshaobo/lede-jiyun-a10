@@ -10,7 +10,7 @@ on:
           - emmc
           - spi
           - both
-        default: emmc
+        default: both
       lede_repo:
         description: "Upstream LEDE repo"
         required: false
@@ -19,23 +19,6 @@ on:
         description: "Upstream branch/tag/commit (branch or 40-char sha)"
         required: false
         default: "f61f09e850959d490c1b43a7eb20eefd46224d4f"
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".github/workflows/**"
-      # Podkop-only inputs: changes here are built by build-podkop.yml.
-      # Shared inputs (scripts/prepare.sh, files/armv8-jiyun-a10.mk,
-      # scripts/mkfit.py, scripts/mk-spi-img.py, the initramfs scripts)
-      # still trigger both workflows on purpose.
-      - "configs/config.podkop.seed"
-      - "package/podkop/**"
-      - "package/luci-app-podkop/**"
-      - "files/lib/upgrade/platform.sh"
-      - "scripts/mk-sysupgrade.sh"
-  schedule:
-    - cron: "0 18 * * 5"
 
 concurrency:
   group: build-${{ github.ref }}
@@ -50,9 +33,8 @@ env:
   # KERNEL_PATCHVER and seeds target/linux/rockchip/patches-7.3.
   # Pass "master" manually to track upstream, and expect new breakage.
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'f61f09e850959d490c1b43a7eb20eefd46224d4f' }}
-  # push / schedule build both packages so the Actions run has the complete
-  # set; switch the fallback to 'emmc' once the SPI package is validated,
-  # since only the rootfs gets iterated on afterwards.
+  # Manual-only builds: the dispatch form defaults to both packages so the
+  # run summary has the complete set; choose emmc/spi for a partial run.
   PACKAGES: ${{ github.event.inputs.packages || 'both' }}
 
 jobs:

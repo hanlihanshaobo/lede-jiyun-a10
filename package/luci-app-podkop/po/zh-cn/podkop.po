@@ -3,7 +3,7 @@ msgstr ""
 "Project-Id-Version: PODKOP\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-05-29 13:40+0300\n"
-"PO-Revision-Date: 2026-11-15 19:30+0800\n"
+"PO-Revision-Date: 2026-11-15 23:55+0800\n"
 "Last-Translator: Jiyun A10 build\n"
 "Language-Team: Simplified Chinese\n"
 "Language: zh_CN\n"
@@ -37,16 +37,16 @@ msgid "Applicable for SOCKS and Shadowsocks proxy"
 msgstr "适用于 SOCKS 和 Shadowsocks 代理"
 
 msgid "At least one valid domain must be specified. Comments-only content is not allowed."
-msgstr "至少必须指定一个有效域名。不允许只包含注释。"
+msgstr "至少填写一个有效域名，不能只写注释。"
 
 msgid "At least one valid subnet or IP must be specified. Comments-only content is not allowed."
-msgstr "至少必须指定一个有效子网或 IP。不允许只包含注释。"
+msgstr "至少填写一个有效子网或 IP，不能只写注释。"
 
 msgid "Available actions"
 msgstr "可用操作"
 
 msgid "Before switching to a server, 64 KiB is downloaded through it, so a server that freezes connections after about 16 KB is skipped"
-msgstr "切换服务器前会通过该服务器下载 64 KiB 数据，因此连接在约 16 KB 后卡死的服务器会被跳过"
+msgstr "切换服务器前会先通过该服务器下载 64 KiB 数据，因此连接在约 16 KB 后卡死的服务器会被跳过"
 
 msgid "Bootsrap DNS"
 msgstr "引导 DNS"
@@ -82,7 +82,7 @@ msgid "Checks passed"
 msgstr "检测通过"
 
 msgid "CIDR must be between 0 and 32"
-msgstr ""
+msgstr "CIDR 必须在 0 到 32 之间"
 
 msgid "Close"
 msgstr "关闭"
@@ -124,7 +124,7 @@ msgid "Default"
 msgstr "默认"
 
 msgid "Delay in milliseconds before reloading podkop after interface UP"
-msgstr "接口 UP 后重新加载 Podkop 前的延迟（毫秒）"
+msgstr "接口 UP 后延迟多少毫秒重新加载 Podkop"
 
 msgid "Delay value cannot be empty"
 msgstr "延迟值不能为空"
@@ -166,7 +166,7 @@ msgid "DNS Server"
 msgstr "DNS 服务器"
 
 msgid "DNS server address cannot be empty"
-msgstr ""
+msgstr "DNS 服务器地址不能为空"
 
 msgid "Do not panic, everything can be fixed, just..."
 msgstr "别慌，一切都能修好，只是……"
@@ -184,19 +184,19 @@ msgid "Download"
 msgstr "下载"
 
 msgid "Download Check"
-msgstr "下载检测"
+msgstr "下载测试"
 
 msgid "Download Check URL"
-msgstr "下载检测 URL"
+msgstr "下载测试 URL"
 
 msgid "Download Lists via Proxy/VPN"
 msgstr "通过代理/VPN 下载列表"
 
 msgid "Download Lists via specific proxy section"
-msgstr "通过指定代理配置下载列表"
+msgstr "通过指定规则段的代理下载列表"
 
 msgid "Downloading all lists via specific Proxy/VPN"
-msgstr "通过指定代理/VPN 下载所有列表"
+msgstr "通过指定规则段的代理/VPN 下载所有列表"
 
 msgid "Dynamic List"
 msgstr "动态列表"
@@ -205,19 +205,19 @@ msgid "Enable autostart"
 msgstr "启用自动启动"
 
 msgid "Enable built-in DNS resolver for domains handled by this section"
-msgstr "为本配置处理的域名启用内置 DNS 解析器"
+msgstr "为当前规则段处理的域名启用内置 DNS 解析器"
 
 msgid "Enable DNS resolve to get real IP when routing"
-msgstr "启用 DNS 解析以在路由时获取真实 IP"
+msgstr "路由时启用 DNS 解析以获取真实 IP"
 
 msgid "Enable Mixed Proxy"
 msgstr "启用混合代理"
 
 msgid "Enable Output Network Interface"
-msgstr "启用输出网络接口"
+msgstr "启用出口网络接口"
 
 msgid "Enable the mixed proxy, allowing this section to route traffic through both HTTP and SOCKS proxies"
-msgstr "启用混合代理，允许本配置通过 HTTP 和 SOCKS 代理转发流量"
+msgstr "启用混合代理，使当前规则段可通过 HTTP 和 SOCKS 代理转发流量"
 
 msgid "Enable uTLS-fallback"
 msgstr "启用 uTLS 回退"
@@ -229,16 +229,16 @@ msgid "Enable YACD WAN Access"
 msgstr "启用 YACD WAN 访问"
 
 msgid "Enter complete outbound configuration in JSON format"
-msgstr "以 JSON 格式输入完整的出站配置"
+msgstr "以 JSON 格式填写完整的出站配置"
 
 msgid "Enter domain names separated by commas, spaces, or newlines. You can add comments using //"
-msgstr "输入域名，用逗号、空格或换行分隔。可使用 // 添加注释"
+msgstr "填写域名，用逗号、空格或换行分隔；可用 // 添加注释"
 
 msgid "Enter domain names without protocols, e.g. example.com or sub.example.com"
-msgstr "输入不带协议的域名，例如 example.com 或 sub.example.com"
+msgstr "填写不带协议的域名，例如 example.com 或 sub.example.com"
 
 msgid "Enter subnets in CIDR notation (e.g. 103.21.244.0/22) or single IP addresses"
-msgstr "以 CIDR 格式输入子网（例如 103.21.244.0/22）或单个 IP 地址"
+msgstr "以 CIDR 格式填写子网（例如 103.21.244.0/22），或填写单个 IP"
 
 msgid "Every 1 minute"
 msgstr "每 1 分钟"
@@ -256,7 +256,7 @@ msgid "Exclude NTP"
 msgstr "排除 NTP"
 
 msgid "Exclude NTP protocol traffic from the tunnel to prevent it from being routed through the proxy or VPN"
-msgstr "从隧道中排除 NTP 协议流量，避免其通过代理或 VPN 路由"
+msgstr "将 NTP 协议流量排除在隧道外，避免其经过代理或 VPN"
 
 msgid "Failed to copy!"
 msgstr "复制失败！"
@@ -271,7 +271,7 @@ msgid "Fastest"
 msgstr "最快"
 
 msgid "Fully Routed IPs"
-msgstr "完全路由的 IP"
+msgstr "强制路由 IP"
 
 msgid "Get global check"
 msgstr "运行全局检测"
@@ -289,139 +289,139 @@ msgid "Interface Monitoring Delay"
 msgstr "接口监控延迟"
 
 msgid "Interface monitoring for Bad WAN"
-msgstr "监控异常 WAN 接口"
+msgstr "异常 WAN 接口监控"
 
 msgid "Invalid DNS server format. Examples: 8.8.8.8 or dns.example.com or dns.example.com/nicedns for DoH"
-msgstr ""
+msgstr "DNS 服务器格式无效。示例：8.8.8.8、dns.example.com；DoH 可写 dns.example.com/nicedns"
 
 msgid "Invalid domain address"
-msgstr ""
+msgstr "域名地址无效"
 
 msgid "Invalid format. Use X.X.X.X or X.X.X.X/Y"
-msgstr ""
+msgstr "格式无效，请使用 X.X.X.X 或 X.X.X.X/Y"
 
 msgid "Invalid HY2 URL: insecure must be 0 or 1"
-msgstr ""
+msgstr "无效的 HY2 URL：insecure 必须为 0 或 1"
 
 msgid "Invalid HY2 URL: invalid port number"
-msgstr ""
+msgstr "无效的 HY2 URL：端口号无效"
 
 msgid "Invalid HY2 URL: missing credentials/server"
-msgstr ""
+msgstr "无效的 HY2 URL：缺少凭据或服务器地址"
 
 msgid "Invalid HY2 URL: missing host"
-msgstr ""
+msgstr "无效的 HY2 URL：缺少主机"
 
 msgid "Invalid HY2 URL: missing host & port"
-msgstr ""
+msgstr "无效的 HY2 URL：缺少主机和端口"
 
 msgid "Invalid HY2 URL: missing password"
-msgstr ""
+msgstr "无效的 HY2 URL：缺少密码"
 
 msgid "Invalid HY2 URL: missing port"
-msgstr ""
+msgstr "无效的 HY2 URL：缺少端口"
 
 msgid "Invalid HY2 URL: must not contain spaces"
-msgstr ""
+msgstr "无效的 HY2 URL：不能包含空格"
 
 msgid "Invalid HY2 URL: must start with hysteria2:// or hy2://"
-msgstr ""
+msgstr "无效的 HY2 URL：必须以 hysteria2:// 或 hy2:// 开头"
 
 msgid "Invalid HY2 URL: obfs-password required when obfs is set"
-msgstr ""
+msgstr "无效的 HY2 URL：设置 obfs 时必须提供 obfs-password"
 
 msgid "Invalid HY2 URL: parsing failed"
-msgstr ""
+msgstr "无效的 HY2 URL：解析失败"
 
 msgid "Invalid HY2 URL: sni cannot be empty"
-msgstr ""
+msgstr "无效的 HY2 URL：sni 不能为空"
 
 msgid "Invalid HY2 URL: unsupported obfs type"
-msgstr ""
+msgstr "无效的 HY2 URL：不支持的 obfs 类型"
 
 msgid "Invalid IP address"
-msgstr ""
+msgstr "IP 地址无效"
 
 msgid "Invalid JSON format"
-msgstr ""
+msgstr "JSON 格式无效"
 
-msgid "Invalid path format. Path must start with \\\"/\\\" and contain valid characters"
-msgstr ""
+msgid "Invalid path format. Path must start with \"/\" and contain valid characters"
+msgstr "路径格式无效：必须以 \"/\" 开头，且只能包含有效字符"
 
 msgid "Invalid port number. Must be between 1 and 65535"
-msgstr ""
+msgstr "端口号无效，必须在 1 到 65535 之间"
 
 msgid "Invalid Shadowsocks URL: decoded credentials must contain method:password"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：解码后的凭据必须包含 method:password"
 
 msgid "Invalid Shadowsocks URL: missing credentials"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：缺少凭据"
 
-msgid "Invalid Shadowsocks URL: missing method and password separator \\\":\\\""
-msgstr ""
+msgid "Invalid Shadowsocks URL: missing method and password separator \":\""
+msgstr "无效的 Shadowsocks URL：缺少 method 和 password 之间的 \":\" 分隔符"
 
 msgid "Invalid Shadowsocks URL: missing port"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：缺少端口"
 
 msgid "Invalid Shadowsocks URL: missing server"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：缺少服务器"
 
 msgid "Invalid Shadowsocks URL: missing server address"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：缺少服务器地址"
 
 msgid "Invalid Shadowsocks URL: must not contain spaces"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：不能包含空格"
 
 msgid "Invalid Shadowsocks URL: must start with ss://"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：必须以 ss:// 开头"
 
 msgid "Invalid Shadowsocks URL: parsing failed"
-msgstr ""
+msgstr "无效的 Shadowsocks URL：解析失败"
 
 msgid "Invalid SOCKS URL: invalid host format"
-msgstr ""
+msgstr "无效的 SOCKS URL：主机格式无效"
 
 msgid "Invalid SOCKS URL: invalid port number"
-msgstr ""
+msgstr "无效的 SOCKS URL：端口号无效"
 
 msgid "Invalid SOCKS URL: missing host and port"
-msgstr ""
+msgstr "无效的 SOCKS URL：缺少主机和端口"
 
 msgid "Invalid SOCKS URL: missing hostname or IP"
-msgstr ""
+msgstr "无效的 SOCKS URL：缺少主机名或 IP"
 
 msgid "Invalid SOCKS URL: missing port"
-msgstr ""
+msgstr "无效的 SOCKS URL：缺少端口"
 
 msgid "Invalid SOCKS URL: missing username"
-msgstr ""
+msgstr "无效的 SOCKS URL：缺少用户名"
 
 msgid "Invalid SOCKS URL: must not contain spaces"
-msgstr ""
+msgstr "无效的 SOCKS URL：不能包含空格"
 
 msgid "Invalid SOCKS URL: must start with socks4://, socks4a://, or socks5://"
-msgstr ""
+msgstr "无效的 SOCKS URL：必须以 socks4://、socks4a:// 或 socks5:// 开头"
 
 msgid "Invalid SOCKS URL: parsing failed"
-msgstr ""
+msgstr "无效的 SOCKS URL：解析失败"
 
 msgid "Invalid Trojan URL: must not contain spaces"
-msgstr ""
+msgstr "无效的 Trojan URL：不能包含空格"
 
 msgid "Invalid Trojan URL: must start with trojan://"
-msgstr ""
+msgstr "无效的 Trojan URL：必须以 trojan:// 开头"
 
 msgid "Invalid Trojan URL: parsing failed"
-msgstr ""
+msgstr "无效的 Trojan URL：解析失败"
 
 msgid "Invalid URL format"
-msgstr ""
+msgstr "URL 格式无效"
 
 msgid "Invalid VLESS URL: parsing failed"
-msgstr ""
+msgstr "无效的 VLESS URL：解析失败"
 
 msgid "IP address 0.0.0.0 is not allowed"
-msgstr ""
+msgstr "不允许使用 IP 地址 0.0.0.0"
 
 msgid "Issues detected"
 msgstr "检测到问题"
@@ -451,10 +451,10 @@ msgid "Mixed Proxy Port"
 msgstr "混合代理端口"
 
 msgid "Monitored Interfaces"
-msgstr "监控的接口"
+msgstr "监控接口"
 
 msgid "Must be a number in the range of 50 - 1000"
-msgstr "必须是 50 - 1000 范围内的数字"
+msgstr "必须是 50–1000 之间的数字"
 
 msgid "Network Interface"
 msgstr "网络接口"
@@ -484,16 +484,16 @@ msgid "Outdated"
 msgstr "已过期"
 
 msgid "Output Network Interface"
-msgstr "输出网络接口"
+msgstr "出口网络接口"
 
 msgid "Path cannot be empty"
-msgstr ""
+msgstr "路径不能为空"
 
 msgid "Path must be absolute (start with /)"
 msgstr "路径必须是绝对路径（以 / 开头）"
 
 msgid "Path must contain at least one directory (like /tmp/cache.db)"
-msgstr "路径必须至少包含一个目录（例如 /tmp/cache.db）"
+msgstr "路径必须至少包含一级目录（例如 /tmp/cache.db）"
 
 msgid "Path must end with cache.db"
 msgstr "路径必须以 cache.db 结尾"
@@ -529,7 +529,7 @@ msgid "Remote Subnet Lists"
 msgstr "远程子网列表"
 
 msgid "Resolve real IP for routing"
-msgstr "启用 DNS 解析以获取真实 IP 用于路由"
+msgstr "路由时解析真实 IP"
 
 msgid "Restart podkop"
 msgstr "重启 Podkop"
@@ -571,37 +571,37 @@ msgid "Secret key for authenticating remote access to YACD when WAN access is en
 msgstr "启用 WAN 访问时，用于验证 YACD 远程访问的密钥。"
 
 msgid "Sections"
-msgstr "配置段"
+msgstr "规则段"
 
 msgid "Select a predefined list for routing"
 msgstr "选择用于路由的预定义列表"
 
 msgid "Select between VPN and Proxy connection methods for traffic routing"
-msgstr "选择 VPN 或代理连接方式来路由流量"
+msgstr "选择通过 VPN 还是代理来路由流量"
 
 msgid "Select DNS protocol to use"
 msgstr "选择要使用的 DNS 协议"
 
 msgid "Select how often the domain or subnet lists are updated automatically"
-msgstr "选择域名或子网列表的自动更新频率"
+msgstr "选择域名/子网列表的自动更新频率"
 
 msgid "Select how to configure the proxy"
 msgstr "选择代理配置方式"
 
 msgid "Select network interface for VPN connection"
-msgstr "选择用于 VPN 连接的网络接口"
+msgstr "选择 VPN 连接使用的网络接口"
 
 msgid "Select or enter DNS server address"
-msgstr "选择或输入 DNS 服务器地址"
+msgstr "选择或填写 DNS 服务器地址"
 
 msgid "Select or enter path for sing-box cache file. Change this ONLY if you know what you are doing"
-msgstr "选择或输入 sing-box 缓存文件路径。仅在明确知道后果时修改"
+msgstr "选择或填写 sing-box 缓存文件路径。仅在明确知道后果时修改"
 
 msgid "Select path for sing-box config file. Change this ONLY if you know what you are doing"
-msgstr "选择 sing-box 配置文件路径。仅在明确知道后果时修改"
+msgstr "选择或填写 sing-box 配置文件路径。仅在明确知道后果时修改"
 
 msgid "Select the DNS protocol type for the domain resolver"
-msgstr "选择域名解析器使用的 DNS 协议类型"
+msgstr "选择域名解析器使用的 DNS 协议"
 
 msgid "Select the list type for adding custom domains"
 msgstr "选择添加自定义域名时使用的列表类型"
@@ -610,22 +610,22 @@ msgid "Select the list type for adding custom subnets"
 msgstr "选择添加自定义子网时使用的列表类型"
 
 msgid "Select the log level for sing-box"
-msgstr "选择 sing-box 的日志级别"
+msgstr "选择 sing-box 日志级别"
 
 msgid "Select the network interface from which the traffic will originate"
-msgstr "选择流量发出的源网络接口"
+msgstr "选择流量源网络接口"
 
 msgid "Select the network interface to which the traffic will originate"
-msgstr "选择流量发出的目标网络接口"
+msgstr "选择流量出口网络接口"
 
 msgid "Select the WAN interfaces to be monitored"
 msgstr "选择要监控的 WAN 接口"
 
 msgid "Selector"
-msgstr "选择器"
+msgstr "手动选择"
 
 msgid "Selector Proxy Links"
-msgstr "选择器代理链接"
+msgstr "手动选择代理链接"
 
 msgid "Services info"
 msgstr "服务信息"
@@ -661,10 +661,10 @@ msgid "Source Network Interface"
 msgstr "源网络接口"
 
 msgid "Specify a local IP address to be excluded from routing"
-msgstr "指定要从路由中排除的本地 IP 地址"
+msgstr "指定不经过当前路由的本地 IP 地址"
 
 msgid "Specify local IP addresses or subnets whose traffic will always be routed through the configured route"
-msgstr "指定始终通过所配置路由转发的本地 IP 地址或子网"
+msgstr "指定始终通过当前路由转发的本地 IP 或子网"
 
 msgid "Specify remote URLs to download and use domain lists"
 msgstr "指定用于下载域名列表的远程 URL"
@@ -700,16 +700,16 @@ msgid "Text List"
 msgstr "文本列表"
 
 msgid "The DNS server used to look up the IP address of an upstream DNS server"
-msgstr "用于查询上游 DNS 服务器 IP 地址的 DNS 服务器"
+msgstr "用于解析上游 DNS 服务器 IP 的 DNS 服务器"
 
 msgid "The interval between connectivity tests"
-msgstr "连通性检测的间隔"
+msgstr "连通性测试间隔"
 
 msgid "The maximum difference in response times (ms) allowed when comparing servers"
-msgstr "比较服务器时允许的响应时间最大差值（毫秒）"
+msgstr "比较服务器时允许的最大响应时间差（毫秒）"
 
 msgid "The URL must serve at least 64 KiB or announce a shorter length"
-msgstr "该 URL 必须至少提供 64 KiB 数据，或声明更短的长度"
+msgstr "该 URL 必须至少返回 64 KiB 数据，或声明更短的长度"
 
 msgid "The URL used to test server connectivity"
 msgstr "用于检测服务器连通性的 URL"
@@ -730,7 +730,7 @@ msgid "TTL must be a positive number"
 msgstr "TTL 必须是正数"
 
 msgid "TTL value cannot be empty"
-msgstr "TTL 值不能为空"
+msgstr "TTL 不能为空"
 
 msgid "UDP (Unprotected DNS)"
 msgstr "UDP（未加密 DNS）"
@@ -748,28 +748,28 @@ msgid "Uplink"
 msgstr "上行"
 
 msgid "URL must start with vless://, ss://, trojan://, socks4/5://, or hysteria2://hy2://"
-msgstr ""
+msgstr "URL 必须以 vless://、ss://、trojan://、socks4/5:// 或 hysteria2://hy2:// 开头"
 
 msgid "URL must use one of the following protocols:"
-msgstr ""
+msgstr "URL 必须使用以下协议之一："
 
 msgid "URLTest"
-msgstr "URLTest"
+msgstr "自动测速"
 
 msgid "URLTest Check Interval"
-msgstr "URLTest 检测间隔"
+msgstr "自动测速间隔"
 
 msgid "URLTest Proxy Links"
-msgstr "URLTest 代理链接"
+msgstr "自动测速代理链接"
 
 msgid "URLTest Testing URL"
-msgstr "URLTest 测试 URL"
+msgstr "自动测速 URL"
 
 msgid "URLTest Tolerance"
-msgstr "URLTest 容差"
+msgstr "自动测速容差"
 
 msgid "Used in this order only while none of the URLTest proxy links responds"
-msgstr "仅当所有 URLTest 代理链接都无响应时，才按此顺序使用"
+msgstr "仅当所有自动测速代理链接都无响应时，才按此顺序使用"
 
 msgid "User Domain List Type"
 msgstr "用户域名列表类型"
@@ -805,16 +805,16 @@ msgid "vless://, ss://, trojan://, socks4/5://, hy2/hysteria2:// links"
 msgstr "vless://、ss://、trojan://、socks4/5://、hy2/hysteria2:// 链接"
 
 msgid "Warning: %s cannot be used together with %s. Previous selections have been removed."
-msgstr "警告：%s 不能与 %s 同时使用。之前的选择已被移除。"
+msgstr "警告：%s 不能与 %s 同时使用，之前的选择已被移除。"
 
 msgid "Warning: Russia inside can only be used with %s. %s already in Russia inside and have been removed from selection."
-msgstr "警告：俄罗斯境内只能与 %s 一起使用。%s 已在俄罗斯境内中，并已从选择中移除。"
+msgstr "警告：俄罗斯境内只能与 %s 一起使用。%s 已在俄罗斯境内中，已从选择中移除。"
 
 msgid "When a server does not answer the TLS ClientHello sent with the uTLS fingerprint of a link, the connection is tried with other fingerprints"
-msgstr "当服务器不响应使用链接的 uTLS 指纹发送的 TLS ClientHello 时，会尝试其他指纹"
+msgstr "当服务器不响应使用该链接 uTLS 指纹发送的 TLS ClientHello 时，会尝试其他指纹"
 
 msgid "YACD Secret Key"
 msgstr "YACD 密钥"
 
 msgid "You can select Output Network Interface, by default autodetect"
-msgstr "你可以选择输出网络接口，默认自动检测"
+msgstr "可以选择出口网络接口，默认自动检测"

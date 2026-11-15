@@ -184,9 +184,11 @@ jobs:
 
       - name: Preflight kernel patches
         # The first kernel prepare on a cold runner builds the host tools and
-        # took 30m00s on the shared runner (the main build hit 29m59s).  Keep
-        # enough headroom so the podkop build does not lose the race.
-        timeout-minutes: 60
+        # took 30-60+ minutes on the shared runners; when the main build runs
+        # concurrently both lose the race.  This workflow is normally run
+        # alone (a workflow-only push does not trigger build.yml), so 90
+        # minutes leaves plenty of headroom.
+        timeout-minutes: 90
         run: |
           cd lede
           set -o pipefail
@@ -204,7 +206,7 @@ jobs:
           exit 1
 
       - name: Download packages
-        timeout-minutes: 60
+        timeout-minutes: 90
         run: |
           cd lede
           make download -j"$(nproc)" || make download -j1 V=s

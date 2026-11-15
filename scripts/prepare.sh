@@ -648,6 +648,20 @@ if [ "$PROFILE" = podkop ]; then
 		"$BASE/lib/upgrade/platform.sh"
 	install -m 0755 "$ROOT/files/lib/upgrade/platform.sh" \
 		"$LEDE/files/lib/upgrade/platform.sh"
+
+	# Podkop needs the *service* form of sing-box.  Lean's sing-box package
+	# only ships /usr/bin/sing-box (PassWall2 runs it itself), so add the
+	# official OpenWrt init script + UCI defaults as overlays.  Podkop sets
+	# enabled/user/conffile and calls /etc/init.d/sing-box start itself.
+	say "install sing-box service overlay"
+	mkdir -p "$LEDE/files/etc/init.d" "$LEDE/files/etc/config" \
+		"$LEDE/files/etc/sing-box"
+	install -m 0755 "$ROOT/files/etc/init.d/sing-box" \
+		"$LEDE/files/etc/init.d/sing-box"
+	install -m 0644 "$ROOT/files/etc/config/sing-box" \
+		"$LEDE/files/etc/config/sing-box"
+	install -m 0644 "$ROOT/files/etc/sing-box/config.json" \
+		"$LEDE/files/etc/sing-box/config.json"
 fi
 
 say "done"

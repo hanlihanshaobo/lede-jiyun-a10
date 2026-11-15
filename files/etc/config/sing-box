@@ -1,0 +1,9 @@
+# Official OpenWrt net/sing-box UCI defaults.
+# Podkop rewrites enabled/user/conffile itself before it starts the service.
+config sing-box 'main'
+	option enabled '0'
+	option user 'sing-box'
+	option conffile '/etc/sing-box/config.json'
+	option workdir '/usr/share/sing-box'
+#	list ifaces 'wan'
+#	list ifaces 'wan6'

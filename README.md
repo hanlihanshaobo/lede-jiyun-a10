@@ -11,9 +11,12 @@ below on top, so upstream updates are trivial.
 
 ```
 .github/workflows/build.yml     Cloud build: build -> pack-emmc / pack-spi -> release
+.github/workflows/build-podkop.yml  Slim Podkop variant (separate release tag)
 scripts/prepare.sh              layer everything below onto a cloned LEDE tree
+scripts/mk-sysupgrade.sh        root.ext4 + kernel FIT -> in-system upgrade tar
 files/rk3568-jiyun-a10.dts      Device tree (DSA switch + PCIe + gmac)
 files/armv8-jiyun-a10.mk        Device/image recipe (DEVICE_PACKAGES, IMAGE/emmc.img)
+files/lib/upgrade/platform.sh   sysupgrade hook: eMMC rootfs + SPI Kernel FIT
 files/99-jiyun-net              uci-defaults: br-lan over lan1/2/3, wan, CID-derived MACs
 files/etc/jiyun-mac.sh          per-unit WLAN MACs, runs from rc.local
 files/etc/rc.local              invokes jiyun-mac.sh at the end of boot
@@ -25,6 +28,7 @@ files/mk-emmc-img.py            MBR + root.ext4 -> eMMC flashing image
 package/luci-app-multiwifi/     Multi-SSID + PassWall2 routing app (installed by prepare.sh)
 package/luci-app-macsplit/      Per-MAC PassWall2 routing app (wired + wireless, installed by prepare.sh)
 configs/config.seed             seed .config (target/device, BTF off, MMC)
+configs/config.podkop.seed      slim variant: no QModem/SSR+/OpenClash/eMMC health/Vlmcsd/vsftpd, + Podkop
 tools/mkfit.py                  repack kernel+DTB into the stock (data-position) FIT
 tools/mk-spi-img.py             loader + u-boot + FIT -> SPI NOR flashing image
 tools/extract_stock_eeprom.py   pull the EEPROM out of a SPI NOR backup
@@ -40,8 +44,13 @@ LEDE only cross-compiles from Linux; install the usual host dependencies first
 
 ```sh
 git clone --depth 1 -b master https://github.com/coolsnowwolf/lede lede
-./scripts/prepare.sh lede                     # DTS, recipe, drivers, board files
+./scripts/prepare.sh lede                     # main profile: DTS, recipe, drivers, board files
 cp configs/config.seed lede/.config
+(cd lede && make defconfig && make -j"$(nproc)")
+
+# slim Podkop profile instead:
+JIYUN_PROFILE=podkop ./scripts/prepare.sh lede
+cp configs/config.podkop.seed lede/.config
 (cd lede && make defconfig && make -j"$(nproc)")
 ```
 
@@ -76,6 +85,41 @@ independent artifacts:
 > A newer eMMC rootfs flashed against an older SPI package will have kmods that
 > do not match the running kernel. `output/kernel.sha256` from two runs tells you
 > whether the kernel actually changed.
+
+## Podkop variant
+
+`build-podkop.yml` builds a second, independent profile from
+`configs/config.podkop.seed` and `Device/jiyun_a10_podkop`:
+
+* removed: QModem, ShadowSocksR Plus+, OpenClash, eMMC health, Vlmcsd KMS,
+  vsftpd, multi-SSID routing (`luci-app-multiwifi`) and per-MAC routing
+  (`luci-app-macsplit`);
+* kept: PassWall2 (nftables transparent proxy), ZeroTier, Disk Man, themes;
+* added: `podkop` + `luci-app-podkop` (and its sing-box/nft-tproxy/bind-dig
+  runtime dependencies).
+
+Podkop's upstream Makefile declares a package conflict with
+`luci-app-passwall2`. This variant keeps PassWall2 installed and removes only
+that conflict word in `prepare.sh`; the two daemons both own nftables/dnsmasq
+state, so **run only one at a time**.
+
+Builds publish to the rolling
+[`podkop-latest` release](https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/tag/podkop-latest):
+
+| Artifact | Content |
+|----------|---------|
+| `jiyun-a10-podkop-emmc.img` | MBR + root.ext4 (USB `wl 0`) |
+| `jiyun-a10-podkop-spi.img` | loader + u-boot + FIT (USB `wl 0`) |
+| `jiyun-a10-podkop-sysupgrade.tar` | in-system upgrade: eMMC rootfs **and** SPI `Kernel` FIT |
+
+The sysupgrade tar is an uncompressed tar with fwtool metadata appended:
+`sysupgrade-jiyun_a10/{CONTROL,kernel,root}`. `files/lib/upgrade/platform.sh`
+writes the FIT to SPI NOR `Kernel` first, then streams the ext4 onto
+`/dev/mmcblk0p1`; the first-boot initramfs grows p1 to the full eMMC. The hook
+is only installed in the Podkop image. For the **first** upgrade from an older
+build that still has the generic `platform.sh`, copy the hook first (the
+release notes contain the exact commands); afterwards LuCI's
+*System → Backup / Flash Firmware* works directly.
 
 ## Flash packages
 

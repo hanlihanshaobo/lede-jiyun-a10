@@ -1,0 +1,396 @@
+name: Build Jiyun A10 Podkop
+
+# Separate variant of build.yml:
+#   * configs/config.podkop.seed + Device/jiyun_a10_podkop
+#   * removes QModem / SSR+ / OpenClash / eMMC health / Vlmcsd / vsftpd and
+#     the multi-SSID / multi-device overlays
+#   * adds podkop + luci-app-podkop
+#   * publishes jiyun-a10-podkop-emmc.img, -spi.img and the in-system
+#     upgrade package jiyun-a10-podkop-sysupgrade.tar to the podkop-latest
+#     release (the main build keeps publishing latest)
+#
+# The main build.yml is intentionally untouched: pushing the shared files
+# (prepare.sh, armv8-jiyun-a10.mk) still runs the main build too, which is a
+# useful regression check for the default profile.
+on:
+  workflow_dispatch:
+    inputs:
+      lede_repo:
+        description: "Upstream LEDE repo"
+        required: false
+        default: "https://github.com/coolsnowwolf/lede"
+      lede_ref:
+        description: "Upstream branch/tag/commit (branch or 40-char sha)"
+        required: false
+        default: "f61f09e850959d490c1b43a7eb20eefd46224d4f"
+  push:
+    branches: [main]
+    paths:
+      - "configs/config.podkop.seed"
+      - "scripts/prepare.sh"
+      - "scripts/mk-sysupgrade.sh"
+      - "files/armv8-jiyun-a10.mk"
+      - "files/lib/upgrade/platform.sh"
+      - ".github/workflows/build-podkop.yml"
+
+concurrency:
+  group: build-podkop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LEDE_REPO: ${{ github.event.inputs.lede_repo || 'https://github.com/coolsnowwolf/lede' }}
+  LEDE_REF: ${{ github.event.inputs.lede_ref || 'f61f09e850959d490c1b43a7eb20eefd46224d4f' }}
+  CONFIG_SEED: configs/config.podkop.seed
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout build recipes
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+
+      - name: Clone upstream LEDE
+        run: |
+          set -eux
+          if [ "${#LEDE_REF}" -eq 40 ] && [ -z "$(printf '%s' "$LEDE_REF" | tr -d '0-9a-f')" ]; then
+            echo "pinned upstream commit: $LEDE_REF"
+            git init -q lede
+            git -C lede remote add origin "$LEDE_REPO"
+            git -C lede fetch --depth 1 origin "$LEDE_REF"
+            git -C lede checkout -q FETCH_HEAD
+            git -C lede submodule update --init --recursive --depth 1
+          else
+            git clone --depth 1 --recurse-submodules --shallow-submodules \
+              --branch "${LEDE_REF}" "${LEDE_REPO}" lede
+          fi
+          git -C lede log --oneline -1
+
+      - name: Update and install feeds
+        run: |
+          cd lede
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Install build dependencies
+        timeout-minutes: 15
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive timeout 240 apt-get update \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 || echo "apt-get update failed, continuing"
+          sudo DEBIAN_FRONTEND=noninteractive timeout 600 apt-get install -y \
+            build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-distutils python3-pip rsync unzip zlib1g-dev \
+            file wget curl libelf-dev cpio
+
+      - name: Inject Jiyun A10 device support (podkop profile)
+        run: JIYUN_PROFILE=podkop ./scripts/prepare.sh lede
+
+      - name: Prefetch xray-core source
+        run: |
+          set -eux
+          MK=lede/package/feeds/passwall_packages/xray-core/Makefile
+          if [ ! -f "$MK" ]; then
+            echo "ERROR: passwall xray-core not installed - check prepare.sh" >&2
+            exit 1
+          fi
+          VER=$(sed -n 's/^PKG_VERSION:=//p' "$MK" | head -1)
+          HASH=$(sed -n 's/^PKG_HASH:=//p' "$MK" | head -1)
+          [ -n "$VER" ] && [ -n "$HASH" ]
+          FILE="lede/dl/xray-core-${VER}.tar.gz"
+          mkdir -p lede/dl
+          if [ -s "$FILE" ] && echo "${HASH}  ${FILE}" | sha256sum -c -; then
+            exit 0
+          fi
+          URL="https://codeload.github.com/XTLS/Xray-core/tar.gz/v${VER}"
+          for i in 1 2 3 4 5; do
+            if curl -fL --retry 3 --connect-timeout 30 --max-time 300 \
+                 -o "$FILE" "$URL"; then
+              break
+            fi
+            sleep 15
+          done
+          echo "${HASH}  ${FILE}" | sha256sum -c -
+
+      - name: Configure
+        run: |
+          set -eux
+          cp "$CONFIG_SEED" lede/.config
+          cd lede
+          make defconfig
+          echo "== target/device =="
+          grep -E "CONFIG_TARGET_(rockchip|.*jiyun_a10)" .config || true
+          echo "== switch driver =="
+          grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_jiyun_a10_podkop=y$' .config \
+            || { echo "ERROR: device jiyun_a10_podkop not selected - did prepare.sh fail to append the recipe?"; exit 1; }
+          grep -q '^CONFIG_PACKAGE_kmod-dsa-rtl8365mb=y$' .config \
+            || { echo "ERROR: kmod-dsa-rtl8365mb not selected - the image would have no switch driver"; exit 1; }
+
+          for sym in \
+            CONFIG_PACKAGE_luci-theme-design \
+            CONFIG_PACKAGE_luci-theme-argon \
+            CONFIG_PACKAGE_luci-app-passwall2 \
+            CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy \
+            CONFIG_PACKAGE_dnsmasq-full \
+            CONFIG_PACKAGE_xray-core \
+            CONFIG_PACKAGE_sing-box \
+            CONFIG_PACKAGE_v2ray-geoip \
+            CONFIG_PACKAGE_v2ray-geosite \
+            CONFIG_PACKAGE_zerotier \
+            CONFIG_PACKAGE_luci-app-zerotier \
+            CONFIG_PACKAGE_luci-app-diskman \
+            CONFIG_PACKAGE_resize2fs \
+            CONFIG_PACKAGE_podkop \
+            CONFIG_PACKAGE_luci-app-podkop \
+            CONFIG_PACKAGE_kmod-nft-tproxy \
+            CONFIG_PACKAGE_coreutils-base64 \
+            CONFIG_PACKAGE_bind-dig \
+            CONFIG_PACKAGE_jq \
+            CONFIG_PACKAGE_curl; do
+            grep -q "^${sym}=y$" .config \
+              || { echo "ERROR: ${sym} not selected - check DEVICE_PACKAGES / config.podkop.seed"; exit 1; }
+          done
+
+          # Removed plugins must not come back through Lean's DEFAULT_PACKAGES
+          # (the negative entries in Device/jiyun_a10_podkop are what makes
+          # this assertion possible).
+          for sym in \
+            CONFIG_PACKAGE_luci-app-ssr-plus \
+            CONFIG_PACKAGE_luci-app-vlmcsd \
+            CONFIG_PACKAGE_luci-app-vsftpd \
+            CONFIG_PACKAGE_luci-app-openclash \
+            CONFIG_PACKAGE_luci-app-emmc-health \
+            CONFIG_PACKAGE_luci-app-qmodem-next \
+            CONFIG_PACKAGE_qmodem; do
+            if grep -q "^${sym}=y$" .config; then
+              echo "ERROR: ${sym} is still selected - the negative DEVICE_PACKAGES entry did not take effect"
+              exit 1
+            fi
+          done
+          echo "jiyun_a10_podkop + switch + podkop packages OK"
+
+      - name: Preflight kernel patches
+        timeout-minutes: 30
+        run: |
+          cd lede
+          set -o pipefail
+          if make target/linux/prepare V=s 2>&1 | tee /tmp/kernel-prepare.log; then
+            echo "all kernel patches applied"
+            exit 0
+          fi
+          { echo '### kernel patches failed'; echo '```'
+            grep -B9 -m1 '\*\*\* \[' /tmp/kernel-prepare.log || tail -20 /tmp/kernel-prepare.log
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -B9 -m1 '\*\*\* \[' /tmp/kernel-prepare.log > /tmp/ctx || tail -12 /tmp/kernel-prepare.log > /tmp/ctx
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done < /tmp/ctx
+          exit 1
+
+      - name: Download packages
+        timeout-minutes: 60
+        run: |
+          cd lede
+          make download -j"$(nproc)" || make download -j1 V=s
+
+      - name: Preflight mt76 patches
+        timeout-minutes: 15
+        run: |
+          cd lede
+          set -o pipefail
+          if make package/kernel/mt76/prepare V=s 2>&1 | tee /tmp/mt76-prepare.log; then
+            echo "all mt76 patches applied"
+            exit 0
+          fi
+          { echo '### mt76 patches failed'; echo '```'
+            grep -B9 -m1 '\*\*\* \[' /tmp/mt76-prepare.log || tail -30 /tmp/mt76-prepare.log
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -B9 -m1 '\*\*\* \[' /tmp/mt76-prepare.log > /tmp/ctx || tail -15 /tmp/mt76-prepare.log > /tmp/ctx
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done < /tmp/ctx
+          exit 1
+
+      - name: Build
+        timeout-minutes: 330
+        run: |
+          cd lede
+          set -o pipefail
+          if make -j"$(nproc)" 2>&1 | tee /tmp/build.log; then
+            exit 0
+          fi
+          echo "::warning::parallel build failed, retrying serially for a readable error"
+          if make -j1 V=s 2>&1 | tee /tmp/build-serial.log; then
+            echo "::notice::serial retry succeeded"
+            exit 0
+          fi
+          { echo '### build failed'; echo '```'
+            tail -60 /tmp/build-serial.log
+            echo '```'; echo; echo '### disk'; echo '```'
+            df -h / || true
+            du -sh build_dir staging_dir dl 2>/dev/null || true
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          CTX=$(grep -B9 -m1 '\*\*\* \[' /tmp/build-serial.log || true)
+          [ -n "$CTX" ] || CTX=$(tail -12 /tmp/build-serial.log)
+          printf '%s\n' "$CTX" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line:0:900}"
+          done
+          exit 1
+
+      - name: Collect build output
+        run: |
+          set -eux
+          mkdir -p output
+          ROOTDIR=$(ls -d lede/build_dir/target-*/linux-rockchip_armv8 | head -1)
+          DTB=$(find "$ROOTDIR" -maxdepth 1 -name "image-rk3568-jiyun-a10.dtb" | head -1)
+          [ -n "$DTB" ] || DTB=$(find "$ROOTDIR" -maxdepth 1 -name "*jiyun*.dtb" | head -1)
+          test -f "$DTB"
+          test -f "$ROOTDIR/Image"
+          cp -v "$DTB" output/rockchip.dtb
+          cp -v "$ROOTDIR/Image" output/Image
+          sha256sum output/Image | tee output/kernel.sha256
+
+          EMMC=$(find lede/bin/targets -name "*jiyun*emmc.img*" | head -1)
+          test -n "$EMMC" || { echo "emmc.img was not produced"; find lede/bin/targets -type f; exit 1; }
+          case "$EMMC" in
+            *.gz) gunzip -c "$EMMC" > output/jiyun-a10-podkop-emmc.img ;;
+            *)    cp -v "$EMMC" output/jiyun-a10-podkop-emmc.img ;;
+          esac
+          test "$(wc -c < output/jiyun-a10-podkop-emmc.img)" -gt 268435456
+
+          TARGET_DIR=$(ls -d lede/build_dir/target-*/root-rockchip | head -1)
+          test -d "$TARGET_DIR"
+          ./scripts/mk-initramfs.sh "$TARGET_DIR" output/initramfs.cpio.gz
+
+          python3 tools/mkfit.py files/stock_fit_header_ramdisk.bin \
+            output/Image output/rockchip.dtb output/initramfs.cpio.gz \
+            output/jiyun-a10-podkop-openwrt.fit
+          python3 tools/mk-spi-img.py files/stock_loader.bin files/stock_uboot.bin \
+            output/jiyun-a10-podkop-openwrt.fit output/jiyun-a10-podkop-spi.img
+
+          # The sysupgrade rootfs is the eMMC image without its 1 MiB MBR gap.
+          dd if=output/jiyun-a10-podkop-emmc.img of=/tmp/root.ext4 \
+            bs=1M skip=1 count=256 status=none
+          test "$(wc -c < /tmp/root.ext4)" -eq 268435456
+          ./scripts/mk-sysupgrade.sh /tmp/root.ext4 \
+            output/jiyun-a10-podkop-openwrt.fit output/jiyun-a10-podkop-sysupgrade.tar
+
+          # fwtool metadata: what makes sysupgrade accept the tar as a Jiyun
+          # A10 image.  The footer sits after the tar EOF marker and is ignored
+          # by tar(1).
+          cat > /tmp/podkop-meta.json <<EOF
+          {"metadata_version":"1.1","compat_version":"1.0","supported_devices":["jiyun,a10"],"version":{"dist":"OpenWrt","version":"24.10.5","revision":"${GITHUB_SHA}","target":"rockchip/armv8","board":"jiyun_a10_podkop"}}
+          EOF
+          lede/staging_dir/host/bin/fwtool -I /tmp/podkop-meta.json \
+            output/jiyun-a10-podkop-sysupgrade.tar
+          lede/staging_dir/host/bin/fwtool -i /tmp/podkop-meta.out \
+            output/jiyun-a10-podkop-sysupgrade.tar
+          grep -q '"jiyun,a10"' /tmp/podkop-meta.out
+
+          tar -tf output/jiyun-a10-podkop-sysupgrade.tar | grep -qx sysupgrade-jiyun_a10/root
+          tar -tf output/jiyun-a10-podkop-sysupgrade.tar | grep -qx sysupgrade-jiyun_a10/kernel
+
+          sha256sum output/* | tee output/SHA256SUMS
+          ls -al output
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-podkop
+          path: output
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-podkop
+          path: output
+
+      - name: Publish podkop-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          ls -l output
+          KERNEL_SHA=$(awk '{print $1}' output/kernel.sha256)
+          SYS_SIZE=$(( $(wc -c < output/jiyun-a10-podkop-sysupgrade.tar) / 1048576 ))
+          EMMC_SIZE=$(( $(wc -c < output/jiyun-a10-podkop-emmc.img) / 1048576 ))
+          SPI_SIZE=$(( $(wc -c < output/jiyun-a10-podkop-spi.img) / 1048576 ))
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/podkop-latest" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/podkop-latest" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/podkop-latest" -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+          cat > notes.md <<EOF
+          Slim Podkop variant of the Jiyun A10 firmware.
+
+          | File | Size | Use |
+          |------|------|-----|
+          | \`jiyun-a10-podkop-emmc.img\` | ${EMMC_SIZE} MiB | eMMC (\`wl 0\`, full loader) |
+          | \`jiyun-a10-podkop-spi.img\` | ${SPI_SIZE} MiB | SPI NOR (\`wl 0\`, full loader) |
+          | \`jiyun-a10-podkop-sysupgrade.tar\` | ${SYS_SIZE} MiB | in-system upgrade (rootfs + kernel FIT) |
+
+          This build removes QModem, ShadowSocksR Plus+, OpenClash, eMMC health,
+          Vlmcsd, vsftpd, the multi-SSID page and the multi-device page.  It keeps
+          PassWall2 and adds Podkop (podkop + luci-app-podkop).  Podkop and
+          PassWall2 both manage nftables/dnsmasq routing: only run one at a time.
+
+          kernel sha256: \`${KERNEL_SHA}\`
+          built from: ${GITHUB_REF_NAME} / ${GITHUB_SHA}
+
+          ### First in-system upgrade from an older build
+
+          Older builds ship the generic \`/lib/upgrade/platform.sh\`, which would
+          treat this tar as a disk image.  Copy the new hook first:
+
+          \`\`\`sh
+          scp lib/upgrade/platform.sh root@192.168.68.1:/tmp/platform.sh
+          ssh root@192.168.68.1 'cp /lib/upgrade/platform.sh /lib/upgrade/platform.sh.old;
+            cp /tmp/platform.sh /lib/upgrade/platform.sh'
+          scp jiyun-a10-podkop-sysupgrade.tar root@192.168.68.1:/tmp/
+          ssh root@192.168.68.1 'sysupgrade -v /tmp/jiyun-a10-podkop-sysupgrade.tar'
+          \`\`\`
+
+          The Podkop image itself contains the hook, so later upgrades can be
+          started from LuCI (System -> Backup / Flash Firmware) without copying it.
+          EOF
+
+          if gh release view podkop-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload podkop-latest \
+              output/jiyun-a10-podkop-emmc.img \
+              output/jiyun-a10-podkop-spi.img \
+              output/jiyun-a10-podkop-sysupgrade.tar \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit podkop-latest --repo "$GITHUB_REPOSITORY" \
+              --title "Jiyun A10 — Podkop firmware" \
+              --notes-file notes.md --latest=false
+          else
+            gh release create podkop-latest --repo "$GITHUB_REPOSITORY" \
+              output/jiyun-a10-podkop-emmc.img \
+              output/jiyun-a10-podkop-spi.img \
+              output/jiyun-a10-podkop-sysupgrade.tar \
+              --title "Jiyun A10 — Podkop firmware" \
+              --notes-file notes.md --latest=false
+          fi
+          gh release view podkop-latest --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'

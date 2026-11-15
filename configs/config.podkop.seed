@@ -1,0 +1,82 @@
+# Seed .config for the slim "podkop" variant.
+#
+# This is a separate profile from configs/config.seed on purpose: the main
+# build keeps OpenClash/QModem/eMMC health/SSR+ and the multi-SSID/multi-device
+# overlays, while this one drops them and adds Podkop.  The removal itself is
+# done with negative DEVICE_PACKAGES entries in Device/jiyun_a10_podkop
+# (files/armv8-jiyun-a10.mk), because Lean's DEFAULT_PACKAGES.router selects
+# luci-app-ssr-plus, luci-app-vlmcsd and luci-app-vsftpd for every image.
+#
+# Build: JIYUN_PROFILE=podkop ./scripts/prepare.sh lede
+#        cp configs/config.podkop.seed lede/.config
+#        cd lede && make defconfig && make -j$(nproc)
+#
+# Kernel symbols (CONFIG_RTL8367B_PHY, CONFIG_MMC_*, ...) are not part of the
+# OpenWrt .config; scripts/prepare.sh edits the kernel config where needed.
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_rockchip_armv8_DEVICE_jiyun_a10_podkop=y
+# Keep the pre-per-device-rootfs selection path: the negative
+# DEVICE_PACKAGES entries then remove Lean's DEFAULT_PACKAGES.router
+# entries from the Kconfig profile itself.
+# CONFIG_TARGET_PER_DEVICE_ROOTFS is not set
+CONFIG_TARGET_KERNEL_PARTSIZE=64
+CONFIG_TARGET_ROOTFS_PARTSIZE=256
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+# CONFIG_TARGET_ROOTFS_SQUASHFS is not set
+CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
+# module BTF rejected cfg80211/mac80211 signatures on this setup
+# CONFIG_KERNEL_DEBUG_INFO_BTF is not set
+
+# ---------------------------------------------------------------------------
+# PassWall2 (kept)
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_luci-app-passwall2=y
+CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy=y
+# PassWall2's nftables backend needs dnsmasq-full (nftset support).
+CONFIG_PACKAGE_dnsmasq-full=y
+# CONFIG_PACKAGE_dnsmasq is not set
+# CONFIG_PACKAGE_luci-app-passwall2_Iptables_Transparent_Proxy is not set
+CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_All=y
+# CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_Xray is not set
+# CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_SingBox is not set
+
+# PassWall2 hard-depends on v2ray-geoip/v2ray-geosite, which Lean's packages
+# feed does not ship; they come from the passwall-packages feed.
+CONFIG_PACKAGE_v2ray-geoip=y
+CONFIG_PACKAGE_v2ray-geosite=y
+
+# ---------------------------------------------------------------------------
+# Podkop (replaces the removed proxy UIs as the router-level entry point)
+#
+# podkop's Makefile pulls sing-box, curl, jq, kmod-nft-tproxy,
+# coreutils-base64 and bind-dig; list them explicitly so a defconfig change in
+# the feed cannot silently drop the runtime dependencies.
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_podkop=y
+CONFIG_PACKAGE_luci-app-podkop=y
+CONFIG_PACKAGE_sing-box=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+CONFIG_PACKAGE_coreutils-base64=y
+CONFIG_PACKAGE_bind-dig=y
+CONFIG_PACKAGE_jq=y
+CONFIG_PACKAGE_curl=y
+
+# ---------------------------------------------------------------------------
+# Removed plugins
+#
+# The negative DEVICE_PACKAGES entries in the device recipe already remove
+# these from the profile, so defconfig will not select them.  Keep explicit
+# "not set" lines as a guard against a stale .config being reused.
+# ---------------------------------------------------------------------------
+# CONFIG_PACKAGE_luci-app-ssr-plus is not set
+# CONFIG_PACKAGE_luci-app-vlmcsd is not set
+# CONFIG_PACKAGE_luci-app-vsftpd is not set
+# CONFIG_PACKAGE_luci-app-openclash is not set
+# CONFIG_PACKAGE_luci-app-emmc-health is not set
+# CONFIG_PACKAGE_mmc-utils is not set
+# CONFIG_PACKAGE_luci-app-qmodem-next is not set
+# CONFIG_PACKAGE_qmodem is not set
+
+# luci-app-multiwifi / luci-app-macsplit are rootfs overlays installed by
+# prepare.sh; JIYUN_PROFILE=podkop skips them.

@@ -12,7 +12,11 @@
 # Everything injected here is a file from this repository; nothing is patched
 # in place except the generic kernel config fragment (see below).
 #
-#     usage: ./scripts/prepare.sh <lede-dir>
+#     usage: [JIYUN_PROFILE=main|podkop] ./scripts/prepare.sh <lede-dir>
+#
+# The default "main" profile installs every board package (OpenClash, QModem,
+# eMMC health, multi-SSID/multi-device overlays).  "podkop" drops those and
+# installs the Podkop feed instead; see configs/config.podkop.seed.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -24,7 +28,14 @@ LEDE="${1:-}"
 LEDE="$(cd "$LEDE" 2>/dev/null && pwd)" || { echo "no such directory: $1" >&2; exit 1; }
 [ -f "$LEDE/rules.mk" ] || { echo "$LEDE is not a LEDE/OpenWrt tree" >&2; exit 1; }
 
+PROFILE="${JIYUN_PROFILE:-main}"
+case "$PROFILE" in
+	main|podkop) ;;
+	*) echo "ERROR: unknown JIYUN_PROFILE=$PROFILE (expected main or podkop)" >&2; exit 1 ;;
+esac
+
 say() { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
+say "profile: $PROFILE"
 
 # ---------------------------------------------------------------------------
 # 0. kernel series
@@ -461,6 +472,10 @@ install -m 0644 "$ROOT/files/mt7916_eeprom.bin" \
 # feeds.conf.default, and the CI runs "feeds update -a"/"feeds install -a"
 # before this script, so add + install the feed here. make defconfig runs
 # afterwards and will see the packages.
+#
+# The podkop profile keeps the feed installed but does not select qmodem in
+# its device recipe.  Keeping the source tree complete avoids dangling
+# DEVICE_PACKAGES names while only the main image actually installs it.
 # ---------------------------------------------------------------------------
 say "add QModem feed"
 (
@@ -499,6 +514,8 @@ say "add PassWall2 feed"
 # luci-app-emmc-health is vendored from adminchenyu/eMMC-Health v1.1.3 (the
 # only eMMC life/Pre-EOL LuCI UI; upstream depends on luci-js-deps which is
 # not in Lean's luci feed, so the vendored Makefile uses mmc-utils directly).
+# The podkop recipe drops it with a negative DEVICE_PACKAGES entry; the
+# source stays in the tree so the unselected jiyun_a10 recipe resolves.
 #
 # PassWall2 needs v2ray-geoip/v2ray-geosite; Lean's packages feed has the
 # cores but not the geodata. Install only the v2ray-geodata source from the
@@ -537,7 +554,12 @@ say "add PassWall2 geo-data feed"
 # overlay. PassWall2 (the runtime dependency) is already selected above.
 # The source package remains in package/luci-app-multiwifi for standalone
 # builds, but the image does not depend on it being selected by Kconfig.
+#
+# Both this and luci-app-macsplit are main-profile only: the podkop variant
+# removes the "多 SSID 分流 / 多设备分流" pages together with their PassWall2
+# ACL consumers.
 # ---------------------------------------------------------------------------
+if [ "$PROFILE" = main ]; then
 say "install luci-app-multiwifi overlay"
 mkdir -p \
 	"$LEDE/files/usr/lib/lua/luci/controller" \
@@ -574,5 +596,49 @@ install -m 0755 "$ROOT/package/luci-app-macsplit/root/usr/libexec/macsplit-apply
 	"$LEDE/files/usr/libexec/macsplit-apply"
 install -m 0644 "$ROOT/package/luci-app-macsplit/root/etc/config/macsplit" \
 	"$LEDE/files/etc/config/macsplit"
+fi
+
+# ---------------------------------------------------------------------------
+# 12. Podkop feed (podkop profile only)
+#
+# Podkop ships the routing daemon (podkop) and its LuCI page
+# (luci-app-podkop) from the same repository.  Its Makefile declares
+# CONFLICTS with luci-app-passwall2 because both own nftables/dnsmasq
+# routing; this variant keeps PassWall2 installed (the main-profile proxy
+# stack), so drop only that conflict word.  At runtime only one daemon may
+# manage the rules; the LuCI pages leave that choice to the user.
+# ---------------------------------------------------------------------------
+if [ "$PROFILE" = podkop ]; then
+	say "add Podkop feed"
+	(
+		cd "$LEDE"
+		[ -f feeds.conf ] || cp feeds.conf.default feeds.conf
+		if ! grep -q '^src-git podkop ' feeds.conf; then
+			echo 'src-git podkop https://github.com/itdoginfo/podkop.git;main' >> feeds.conf
+		fi
+		./scripts/feeds update podkop
+		./scripts/feeds install -p podkop podkop
+		./scripts/feeds install -p podkop luci-app-podkop
+
+		PKG_MK="$LEDE/package/feeds/podkop/podkop/Makefile"
+		[ -f "$PKG_MK" ] || {
+			echo "ERROR: $PKG_MK not installed by the podkop feed" >&2
+			exit 1
+		}
+		sed -i 's/luci-app-passwall2//' "$PKG_MK"
+		if grep -q 'luci-app-passwall2' "$PKG_MK"; then
+			echo "ERROR: could not remove the PassWall2 conflict from $PKG_MK" >&2
+			exit 1
+		fi
+	)
+
+	# sysupgrade hook: a Podkop image updates both the eMMC rootfs and the
+	# SPI NOR "Kernel" FIT.  The main profile keeps the generic platform.sh
+	# (it has no FIT-bearing upgrade package).
+	say "install sysupgrade platform hook"
+	mkdir -p "$BASE/lib/upgrade"
+	install -m 0755 "$ROOT/files/lib/upgrade/platform.sh" \
+		"$BASE/lib/upgrade/platform.sh"
+fi
 
 say "done"

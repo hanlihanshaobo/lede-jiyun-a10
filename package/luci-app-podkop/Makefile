@@ -11,11 +11,12 @@ LUCI_DEPENDS:=+luci-base +podkop
 LUCI_PKGARCH:=all
 LUCI_LANG.ru:=Русский (Russian)
 LUCI_LANG.en:=English
+LUCI_LANG.zh-cn:=简体中文 (Simplified Chinese)
 
 PKG_LICENSE:=GPL-2.0-or-later
 PKG_MAINTAINER:=ITDog <podkop@itdog.info>
 
-LUCI_LANGUAGES:=en ru
+LUCI_LANGUAGES:=en ru zh-cn
 
 include $(TOPDIR)/feeds/luci/luci.mk
 

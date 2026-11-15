@@ -5,7 +5,7 @@ Layout (the stock SPI NOR partition map, so the stock boot flow is untouched):
 
     0x000000  loader  1 MiB   stock loader partition (GPT header + idbloader)
     0x100000  uboot   2 MiB   stock u-boot FIT (U-Boot + ATF + OP-TEE + MCU)
-    0x300000  FIT     5.8MB   OpenWrt kernel + DTB, see tools/mkfit.py
+    0x300000  FIT     5.8MB   OpenWrt kernel + DTB, see scripts/mkfit.py
 
 Everything before 0x300000 is the untouched stock bootloader; only the
 "Kernel" partition is replaced. 8.6 MiB total, which fits the 32 MiB maskrom

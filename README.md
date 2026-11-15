@@ -10,8 +10,8 @@ below on top, so upstream updates are trivial.
 ## Layout
 
 ```
-.github/workflows/build.yml     Cloud build: build -> pack-emmc / pack-spi -> release
-.github/workflows/build-podkop.yml  Slim Podkop variant (separate release tag)
+.github/workflows/build.yml     Cloud build: build -> pack-emmc / pack-spi -> artifacts
+.github/workflows/build-podkop.yml  Slim Podkop variant (separate config/workflow)
 scripts/prepare.sh              layer everything below onto a cloned LEDE tree
 scripts/mk-sysupgrade.sh        root.ext4 + kernel FIT -> in-system upgrade tar
 files/rk3568-jiyun-a10.dts      Device tree (DSA switch + PCIe + gmac)
@@ -31,10 +31,8 @@ package/podkop/                 Podkop daemon + sing-box procd service (config-s
 package/luci-app-podkop/        Podkop LuCI app (config-selected)
 configs/config.seed             seed .config (target/device, BTF off, MMC)
 configs/config.podkop.seed      slim variant: no QModem/SSR+/OpenClash/eMMC health/Vlmcsd/vsftpd, + Podkop
-tools/mkfit.py                  repack kernel+DTB into the stock (data-position) FIT
-tools/mk-spi-img.py             loader + u-boot + FIT -> SPI NOR flashing image
-tools/extract_stock_eeprom.py   pull the EEPROM out of a SPI NOR backup
-tools/rkdeveloptool             macOS build
+scripts/mkfit.py                repack kernel+DTB into the stock (data-position) FIT
+scripts/mk-spi-img.py           loader + u-boot + FIT -> SPI NOR flashing image
 kernel/patches/                 our kernel patches (RTL8367S LED regs, MT7916 LED mux);
                                 900-net-phy-add-rtl8367s is reference only, NOT injected - DSA runs
 ```
@@ -65,8 +63,9 @@ Push to `main`, run the workflow manually (Actions → *Build Jiyun A10 OpenWrt*
 *Run workflow*), or wait for the weekly schedule.
 
 `workflow_dispatch` takes a `packages` input; push and schedule default to
-`emmc`. The two packages are built by independent jobs and uploaded as
-independent artifacts:
+`both`. Every build is downloaded from the Actions run page (*Summary* →
+*Artifacts*); this repository no longer publishes GitHub Releases. The two
+packages are built by independent jobs and uploaded as independent artifacts:
 
 | `packages` | Artifacts |
 |------------|-----------|
@@ -102,7 +101,11 @@ independent artifacts:
 
 The packages are vendored under `package/` (like `luci-app-emmc-health`), so
 any `.config` can select them; `config.podkop.seed` is just the config that
-does.  Podkop requires the **service** form of sing-box (`/etc/init.d/sing-box`,
+does.  The LuCI app ships `en`, `ru` and `zh-cn` (简体中文); the seed selects
+`luci-i18n-podkop-zh-cn`, so after flashing choose *System → System → Language
+→ 简体中文* to switch the UI.
+
+Podkop requires the **service** form of sing-box (`/etc/init.d/sing-box`,
 `/etc/config/sing-box`, `/etc/sing-box/config.json`), not just the binary.
 Lean's `sing-box` package only installs `/usr/bin/sing-box` because PassWall2
 invokes it directly, so `package/podkop/` ships the official OpenWrt init
@@ -114,11 +117,11 @@ Podkop's upstream Makefile declares a package conflict with
 that conflict word in `prepare.sh`; the two daemons both own nftables/dnsmasq
 state, so **run only one at a time**.
 
-Builds publish to the rolling
-[`podkop-latest` release](https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/tag/podkop-latest):
+Every run uploads a single `build-output-podkop` Actions artifact
+(*Actions → Build Jiyun A10 Podkop → run → Summary → Artifacts*). It contains:
 
-| Artifact | Content |
-|----------|---------|
+| File | Content |
+|------|---------|
 | `jiyun-a10-podkop-emmc.img` | MBR + root.ext4 (USB `wl 0`) |
 | `jiyun-a10-podkop-spi.img` | loader + u-boot + FIT (USB `wl 0`) |
 | `jiyun-a10-podkop-sysupgrade.tar` | in-system upgrade: eMMC rootfs **and** SPI `Kernel` FIT |
@@ -133,23 +136,27 @@ default resize2fs check refuses to grow it; the hook keeps a stage-2 log at
 eMMC LBA 1020 (`dd if=/dev/mmcblk0 bs=512 skip=1020 count=8 | strings`).
 
 The hook is only installed in the Podkop image. For the **first** upgrade from
-an older build that still has the generic `platform.sh`, copy the hook first
-(the release notes contain the exact commands); afterwards LuCI's
-*System → Backup / Flash Firmware* works directly.
+an older build that still has the generic `platform.sh`, copy the hook first;
+afterwards LuCI's *System → Backup / Flash Firmware* works directly:
+
+```sh
+ssh root@192.168.68.1 'cat > /tmp/platform.sh' < files/lib/upgrade/platform.sh
+ssh root@192.168.68.1 'cp /lib/upgrade/platform.sh /lib/upgrade/platform.sh.old;
+  cp /tmp/platform.sh /lib/upgrade/platform.sh'
+ssh root@192.168.68.1 'cat > /tmp/podkop-sysupgrade.tar' < jiyun-a10-podkop-sysupgrade.tar
+ssh root@192.168.68.1 'sysupgrade -v /tmp/podkop-sysupgrade.tar'
+```
+
+(Dropbear on OpenWrt has no sftp-server, so `scp` fails; pipe the files through
+`ssh ... 'cat > ...'`.)
 
 ## Flash packages
 
-Every successful build publishes to the rolling
-[`latest` release](https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/latest),
-which always keeps the newest of both files:
+There are no GitHub Releases anymore. Download the latest run's artifacts from
+*Actions → Build Jiyun A10 OpenWrt → run → Summary → Artifacts*:
 
-```sh
-curl -LO https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/latest/download/jiyun-a10-spi.img
-curl -LO https://github.com/hanlihanshaobo/lede-jiyun-a10/releases/latest/download/jiyun-a10-emmc.img
-```
-
-A run that only rebuilds the eMMC package overwrites that asset and leaves the
-SPI asset in place, so the download links never break.
+- `jiyun-a10-emmc` — zip containing `jiyun-a10-emmc.img`
+- `jiyun-a10-spi` — zip containing `jiyun-a10-spi.img`
 
 The build produces exactly two files, which are all that is needed to bring up a
 device with **both SPI NOR and eMMC blank** (maskrom is then the only entry
@@ -161,7 +168,7 @@ point):
 | `jiyun-a10-emmc.img` | MBR + root.ext4 `@ LBA 2048` (257 MB) | eMMC, `wl 0` |
 
 ```sh
-RKD=./tools/rkdeveloptool
+RKD=rkdeveloptool
 $RKD ld && $RKD cs 9 && $RKD wl 0 jiyun-a10-spi.img   # 1. maskrom: whole boot chain
 # power-cycle, hold RESET -> loader mode
 $RKD ld && $RKD cs 1 && $RKD wl 0 jiyun-a10-emmc.img  # 2. loader mode: rootfs
@@ -202,7 +209,7 @@ README-only changes are ignored (`paths-ignore`), so docs don't trigger a build.
   `/etc/config/wireless`, so WLAN MACs must be applied from `rc.local`, not from
   `/etc/uci-defaults`; hostapd needs `wifi down/up` (a SIGHUP won't change BSSID).
 - **FIT format**: the 2017.09 u-boot only understands `data-position`; `mkimage -E`
-  emits `data-offset`, hence `tools/mkfit.py` patches the stock header.
+  emits `data-offset`, hence `scripts/mkfit.py` patches the stock header.
 - **eMMC rootfs expansion**: the 256 MB rootfs is created by `make_ext4fs` with only
   15 reserved GDT blocks, so the kernel 6.18 online resize aborts at 377.8 MB with
   `reserve_backup_gdb: reserved block 16 not at offset 15` (7.3 not re-checked

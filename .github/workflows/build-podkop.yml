@@ -5,9 +5,9 @@ name: Build Jiyun A10 Podkop
 #   * removes QModem / SSR+ / OpenClash / eMMC health / Vlmcsd / vsftpd and
 #     the multi-SSID / multi-device overlays
 #   * adds podkop + luci-app-podkop
-#   * publishes jiyun-a10-podkop-emmc.img, -spi.img and the in-system
-#     upgrade package jiyun-a10-podkop-sysupgrade.tar to the podkop-latest
-#     release (the main build keeps publishing latest)
+#   * uploads jiyun-a10-podkop-emmc.img, -spi.img and the in-system upgrade
+#     package jiyun-a10-podkop-sysupgrade.tar as the build-output-podkop
+#     Actions artifact (download it from the run summary)
 #
 # The main build.yml is intentionally untouched: pushing the shared files
 # (prepare.sh, armv8-jiyun-a10.mk) still runs the main build too, which is a
@@ -31,6 +31,8 @@ on:
       - "package/luci-app-podkop/**"
       - "scripts/prepare.sh"
       - "scripts/mk-sysupgrade.sh"
+      - "scripts/mkfit.py"
+      - "scripts/mk-spi-img.py"
       - "scripts/initramfs-init"
       - "scripts/mk-initramfs.sh"
       - "files/armv8-jiyun-a10.mk"
@@ -294,10 +296,10 @@ jobs:
           test -d "$TARGET_DIR"
           ./scripts/mk-initramfs.sh "$TARGET_DIR" output/initramfs.cpio.gz
 
-          python3 tools/mkfit.py files/stock_fit_header_ramdisk.bin \
+          python3 scripts/mkfit.py files/stock_fit_header_ramdisk.bin \
             output/Image output/rockchip.dtb output/initramfs.cpio.gz \
             output/jiyun-a10-podkop-openwrt.fit
-          python3 tools/mk-spi-img.py files/stock_loader.bin files/stock_uboot.bin \
+          python3 scripts/mk-spi-img.py files/stock_loader.bin files/stock_uboot.bin \
             output/jiyun-a10-podkop-openwrt.fit output/jiyun-a10-podkop-spi.img
 
           # The sysupgrade rootfs is the eMMC image without its 1 MiB MBR gap.
@@ -334,89 +336,3 @@ jobs:
           path: output
           retention-days: 30
           if-no-files-found: error
-
-  release:
-    needs: build
-    if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download build output
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output-podkop
-          path: output
-
-      - name: Publish podkop-latest release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -eux
-          ls -l output
-          KERNEL_SHA=$(awk '{print $1}' output/kernel.sha256)
-          SYS_SIZE=$(( $(wc -c < output/jiyun-a10-podkop-sysupgrade.tar) / 1048576 ))
-          EMMC_SIZE=$(( $(wc -c < output/jiyun-a10-podkop-emmc.img) / 1048576 ))
-          SPI_SIZE=$(( $(wc -c < output/jiyun-a10-podkop-spi.img) / 1048576 ))
-
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/podkop-latest" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/podkop-latest" \
-              -f sha="$GITHUB_SHA" -F force=true >/dev/null
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/podkop-latest" -f sha="$GITHUB_SHA" >/dev/null
-          fi
-
-          cat > notes.md <<EOF
-          Slim Podkop variant of the Jiyun A10 firmware.
-
-          | File | Size | Use |
-          |------|------|-----|
-          | \`jiyun-a10-podkop-emmc.img\` | ${EMMC_SIZE} MiB | eMMC (\`wl 0\`, full loader) |
-          | \`jiyun-a10-podkop-spi.img\` | ${SPI_SIZE} MiB | SPI NOR (\`wl 0\`, full loader) |
-          | \`jiyun-a10-podkop-sysupgrade.tar\` | ${SYS_SIZE} MiB | in-system upgrade (rootfs + kernel FIT) |
-
-          This build removes QModem, ShadowSocksR Plus+, OpenClash, eMMC health,
-          Vlmcsd, vsftpd, the multi-SSID page and the multi-device page.  It keeps
-          PassWall2 and adds Podkop (podkop + luci-app-podkop).  Podkop and
-          PassWall2 both manage nftables/dnsmasq routing: only run one at a time.
-
-          kernel sha256: \`${KERNEL_SHA}\`
-          built from: ${GITHUB_REF_NAME} / ${GITHUB_SHA}
-
-          ### First in-system upgrade from an older build
-
-          Older builds ship the generic \`/lib/upgrade/platform.sh\`, which would
-          treat this tar as a disk image.  Copy the new hook first:
-
-          \`\`\`sh
-          scp lib/upgrade/platform.sh root@192.168.68.1:/tmp/platform.sh
-          ssh root@192.168.68.1 'cp /lib/upgrade/platform.sh /lib/upgrade/platform.sh.old;
-            cp /tmp/platform.sh /lib/upgrade/platform.sh'
-          scp jiyun-a10-podkop-sysupgrade.tar root@192.168.68.1:/tmp/
-          ssh root@192.168.68.1 'sysupgrade -v /tmp/jiyun-a10-podkop-sysupgrade.tar'
-          \`\`\`
-
-          The Podkop image itself contains the hook, so later upgrades can be
-          started from LuCI (System -> Backup / Flash Firmware) without copying it.
-          EOF
-
-          if gh release view podkop-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload podkop-latest \
-              output/jiyun-a10-podkop-emmc.img \
-              output/jiyun-a10-podkop-spi.img \
-              output/jiyun-a10-podkop-sysupgrade.tar \
-              --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit podkop-latest --repo "$GITHUB_REPOSITORY" \
-              --title "Jiyun A10 — Podkop firmware" \
-              --notes-file notes.md --latest=false
-          else
-            gh release create podkop-latest --repo "$GITHUB_REPOSITORY" \
-              output/jiyun-a10-podkop-emmc.img \
-              output/jiyun-a10-podkop-spi.img \
-              output/jiyun-a10-podkop-sysupgrade.tar \
-              --title "Jiyun A10 — Podkop firmware" \
-              --notes-file notes.md --latest=false
-          fi
-          gh release view podkop-latest --repo "$GITHUB_REPOSITORY" \
-            --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'

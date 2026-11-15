@@ -41,9 +41,9 @@ env:
   # KERNEL_PATCHVER and seeds target/linux/rockchip/patches-7.3.
   # Pass "master" manually to track upstream, and expect new breakage.
   LEDE_REF: ${{ github.event.inputs.lede_ref || 'f61f09e850959d490c1b43a7eb20eefd46224d4f' }}
-  # push / schedule build both packages for now, to get a complete set into the
-  # latest release; switch the fallback to 'emmc' once the SPI package is
-  # validated, since only the rootfs gets iterated on afterwards.
+  # push / schedule build both packages so the Actions run has the complete
+  # set; switch the fallback to 'emmc' once the SPI package is validated,
+  # since only the rootfs gets iterated on afterwards.
   PACKAGES: ${{ github.event.inputs.packages || 'both' }}
 
 jobs:
@@ -446,7 +446,7 @@ jobs:
           # (2017.09-dirty) only understands the old "data-position" one -
           # it would fail with "Could not find kernel subimage data!".
           test -f output/initramfs.cpio.gz
-          python3 tools/mkfit.py files/stock_fit_header_ramdisk.bin \
+          python3 scripts/mkfit.py files/stock_fit_header_ramdisk.bin \
             /tmp/Image /tmp/rockchip.dtb output/initramfs.cpio.gz output/jiyun-a10-openwrt.fit
           ls -l output/jiyun-a10-openwrt.fit
 
@@ -457,7 +457,7 @@ jobs:
           # i.e. the whole boot chain in one 8.6 MiB file. It fits the maskrom
           # 32 MiB write window, so a completely blank SPI NOR can be flashed
           # without a loader being present beforehand.
-          python3 tools/mk-spi-img.py files/stock_loader.bin files/stock_uboot.bin \
+          python3 scripts/mk-spi-img.py files/stock_loader.bin files/stock_uboot.bin \
             output/jiyun-a10-openwrt.fit output/jiyun-a10-spi.img
           ls -l output/jiyun-a10-spi.img
 
@@ -479,114 +479,3 @@ jobs:
           path: output/jiyun-a10-spi.img
           retention-days: 30
           if-no-files-found: error
-
-  # -------------------------------------------------------------------------
-  # Job 3: publish to the rolling "latest" release. The release always keeps
-  # both assets; an eMMC-only run overwrites just the eMMC one, so the SPI
-  # package stays downloadable until it is rebuilt on purpose.
-  # -------------------------------------------------------------------------
-  release:
-    needs: [build, pack-emmc, pack-spi]
-    # main only: a workflow_dispatch run on a topic branch must never overwrite
-    # the rolling "latest" firmware with an unvalidated kernel.
-    if: ${{ always() && !cancelled() && needs.build.result == 'success' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download packages
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: jiyun-a10-*
-          merge-multiple: true
-
-      - name: Download build output
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output
-          path: build-output
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -eux
-          ls -l dist
-
-          # Move the rolling 'latest' tag to this build's commit so the
-          # auto-generated source archive matches the firmware.
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/latest" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
-              -f sha="$GITHUB_SHA" -F force=true >/dev/null
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/latest" -f sha="$GITHUB_SHA" >/dev/null
-          fi
-
-          IMGS=$(ls dist/*.img 2>/dev/null || true)
-          [ -n "$IMGS" ] || { echo "nothing to publish"; exit 1; }
-
-          KERNEL_SHA=$(awk '{print $1}' build-output/kernel.sha256 2>/dev/null || true)
-          [ -n "$KERNEL_SHA" ] || KERNEL_SHA="(not captured: eMMC-only run)"
-
-          size() { wc -c < "$1" | tr -d ' '; }
-          fmt() { echo "$(($1 / 1048576)) MiB"; }
-          SPI_SIZE="not rebuilt"; EMMC_SIZE="not rebuilt"
-          if [ -f dist/jiyun-a10-spi.img ]; then
-            SPI_SIZE=$(fmt "$(size dist/jiyun-a10-spi.img)")
-          fi
-          if [ -f dist/jiyun-a10-emmc.img ]; then
-            EMMC_SIZE=$(fmt "$(size dist/jiyun-a10-emmc.img)")
-          fi
-
-          cat > notes.md <<EOF
-          Rolling release: the two files below always hold the newest build.
-          Assets not rebuilt in a given run are left untouched.
-
-          | File | Size | Write to | Command |
-          |------|------|----------|---------|
-          | \`jiyun-a10-spi.img\`  | ${SPI_SIZE}  | SPI NOR | \`wl 0\` (full loader) |
-          | \`jiyun-a10-emmc.img\` | ${EMMC_SIZE} | eMMC    | \`wl 0\` (full loader) |
-
-          **Hold RESET while powering on to enter loader/maskrom. rboot has been removed.**
-
-          \`\`\`sh
-          RKD=./tools/rkdeveloptool
-          \$RKD ld
-          \$RKD db artifacts/a10-loader-full.bin   # full loader: SPI + eMMC
-          \$RKD cs 1 && \$RKD wl 0 jiyun-a10-emmc.img
-          \$RKD cs 9 && \$RKD wl 0 jiyun-a10-spi.img
-          \$RKD rd
-          \`\`\`
-
-          - eMMC image is ~513 MiB; expand the 7 GB p1 offline with \`scripts/expand_emmc_offline.sh\`.
-          - The single USB port is the OTG/flashing port (device mode only, no VBUS host); U-disks are not supported (same on stock).
-          - **Always load the full loader with \`db\` before writing SPI.** The U-Boot loader mode does not support \`cs 9\`; a \`wl\` after the failed switch goes to eMMC.
-          - kernel sha256: \`${KERNEL_SHA}\`
-          - built from: ${GITHUB_REF_NAME} / ${GITHUB_SHA} (${PACKAGES})
-          - run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-
-          **The SPI package carries the kernel.** Rebuild it (\`packages: both\`)
-          whenever the kernel, DTS, device recipe or upstream LEDE revision
-          changes - an eMMC rootfs flashed against an older SPI package will
-          have kmods that do not match the running kernel.
-          EOF
-
-          # This job never checks out the tree, so gh has no git remote to infer
-          # the repository from: every call needs an explicit --repo, otherwise
-          # it dies with "failed to run git: fatal: not a git repository" (#54).
-          if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload latest $IMGS --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit latest --repo "$GITHUB_REPOSITORY" \
-              --title "Jiyun A10 — latest firmware" \
-              --notes-file notes.md --latest
-          else
-            gh release create latest $IMGS --repo "$GITHUB_REPOSITORY" \
-              --title "Jiyun A10 — latest firmware" \
-              --notes-file notes.md --latest
-          fi
-
-          echo "published:"
-          gh release view latest --repo "$GITHUB_REPOSITORY" \
-            --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'

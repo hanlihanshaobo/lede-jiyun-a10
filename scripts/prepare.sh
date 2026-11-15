@@ -616,7 +616,7 @@ say "install podkop + luci-app-podkop"
 rm -rf "$LEDE/package/podkop" "$LEDE/package/luci-app-podkop"
 cp -a "$ROOT/package/podkop" "$LEDE/package/"
 cp -a "$ROOT/package/luci-app-podkop" "$LEDE/package/"
-if grep -q 'luci-app-passwall2' "$LEDE/package/podkop/Makefile"; then
+if grep -q '^[[:space:]]*CONFLICTS:=.*luci-app-passwall2' "$LEDE/package/podkop/Makefile"; then
 	echo "ERROR: vendored podkop Makefile still conflicts with PassWall2" >&2
 	exit 1
 fi

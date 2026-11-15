@@ -11,7 +11,7 @@ PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
 
-# Local patch: the Jiyun podkop variant keeps luci-app-passwall2 installed
+# Local patch: the Jiyun podkop variant keeps PassWall2 installed
 # (both manage nftables/dnsmasq routing; only one may run at a time).
 define Package/podkop
 	SECTION:=net

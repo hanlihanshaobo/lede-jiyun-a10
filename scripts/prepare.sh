@@ -602,35 +602,26 @@ fi
 # 12. Podkop feed (podkop profile only)
 #
 # Podkop ships the routing daemon (podkop) and its LuCI page
-# (luci-app-podkop) from the same repository.  Its Makefile declares
-# CONFLICTS with luci-app-passwall2 because both own nftables/dnsmasq
-# routing; this variant keeps PassWall2 installed (the main-profile proxy
-# stack), so drop only that conflict word.  At runtime only one daemon may
-# manage the rules; the LuCI pages leave that choice to the user.
+# (luci-app-podkop).  Both are vendored under package/ (same model as
+# luci-app-emmc-health) instead of adding another upstream feed.  The
+# vendored podkop Makefile declares CONFLICTS with luci-app-passwall2
+# because both own nftables/dnsmasq routing; this variant keeps PassWall2
+# installed (the main-profile proxy stack), so that one word is removed
+# in package/podkop/Makefile.  At runtime only one daemon may manage the
+# rules; the LuCI pages leave that choice to the user.
 # ---------------------------------------------------------------------------
 if [ "$PROFILE" = podkop ]; then
-	say "add Podkop feed"
-	(
-		cd "$LEDE"
-		[ -f feeds.conf ] || cp feeds.conf.default feeds.conf
-		if ! grep -q '^src-git podkop ' feeds.conf; then
-			echo 'src-git podkop https://github.com/itdoginfo/podkop.git;main' >> feeds.conf
-		fi
-		./scripts/feeds update podkop
-		./scripts/feeds install -p podkop podkop
-		./scripts/feeds install -p podkop luci-app-podkop
-
-		PKG_MK="$LEDE/package/feeds/podkop/podkop/Makefile"
-		[ -f "$PKG_MK" ] || {
-			echo "ERROR: $PKG_MK not installed by the podkop feed" >&2
-			exit 1
-		}
-		sed -i 's/luci-app-passwall2//' "$PKG_MK"
-		if grep -q 'luci-app-passwall2' "$PKG_MK"; then
-			echo "ERROR: could not remove the PassWall2 conflict from $PKG_MK" >&2
-			exit 1
-		fi
-	)
+	say "install podkop + luci-app-podkop"
+	# Vendored under package/ like luci-app-emmc-health: no extra feed, and
+	# the source is visible in this repository.  package/podkop/Makefile has
+	# the local CONFLICTS patch (PassWall2 is kept in this variant).
+	rm -rf "$LEDE/package/podkop" "$LEDE/package/luci-app-podkop"
+	cp -a "$ROOT/package/podkop" "$LEDE/package/"
+	cp -a "$ROOT/package/luci-app-podkop" "$LEDE/package/"
+	if grep -q 'luci-app-passwall2' "$LEDE/package/podkop/Makefile"; then
+		echo "ERROR: vendored podkop Makefile still conflicts with PassWall2" >&2
+		exit 1
+	fi
 
 	# sysupgrade hook: a Podkop image updates both the eMMC rootfs and the
 	# SPI NOR "Kernel" FIT.  The main profile keeps the generic platform.sh

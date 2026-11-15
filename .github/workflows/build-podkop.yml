@@ -27,6 +27,8 @@ on:
     branches: [main]
     paths:
       - "configs/config.podkop.seed"
+      - "package/podkop/**"
+      - "package/luci-app-podkop/**"
       - "scripts/prepare.sh"
       - "scripts/mk-sysupgrade.sh"
       - "scripts/initramfs-init"
@@ -187,8 +189,10 @@ jobs:
         # took 30-60+ minutes on the shared runners; when the main build runs
         # concurrently both lose the race.  This workflow is normally run
         # alone (a workflow-only push does not trigger build.yml), so 90
-        # minutes leaves plenty of headroom.
-        timeout-minutes: 90
+        # minutes leaves plenty of headroom.  A push that also changes
+        # scripts/prepare.sh starts build.yml too; that main build usually
+        # times out at 30 minutes and then releases the runner, so allow 120.
+        timeout-minutes: 120
         run: |
           cd lede
           set -o pipefail

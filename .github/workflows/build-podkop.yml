@@ -178,7 +178,10 @@ jobs:
           echo "jiyun_a10_podkop + switch + podkop packages OK"
 
       - name: Preflight kernel patches
-        timeout-minutes: 30
+        # The first kernel prepare on a cold runner builds the host tools and
+        # took 30m00s on the shared runner (the main build hit 29m59s).  Keep
+        # enough headroom so the podkop build does not lose the race.
+        timeout-minutes: 60
         run: |
           cd lede
           set -o pipefail

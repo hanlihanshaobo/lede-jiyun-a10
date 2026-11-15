@@ -17,6 +17,9 @@ scripts/mk-sysupgrade.sh        root.ext4 + kernel FIT -> in-system upgrade tar
 files/rk3568-jiyun-a10.dts      Device tree (DSA switch + PCIe + gmac)
 files/armv8-jiyun-a10.mk        Device/image recipe (DEVICE_PACKAGES, IMAGE/emmc.img)
 files/lib/upgrade/platform.sh   sysupgrade hook: eMMC rootfs + SPI Kernel FIT
+files/etc/init.d/sing-box        official sing-box procd service (podkop profile)
+files/etc/config/sing-box        UCI defaults for that service
+files/etc/sing-box/config.json   placeholder config (podkop rewrites it)
 files/99-jiyun-net              uci-defaults: br-lan over lan1/2/3, wan, CID-derived MACs
 files/etc/jiyun-mac.sh          per-unit WLAN MACs, runs from rc.local
 files/etc/rc.local              invokes jiyun-mac.sh at the end of boot
@@ -98,6 +101,13 @@ independent artifacts:
 * added: `podkop` + `luci-app-podkop` (and its sing-box/nft-tproxy/bind-dig
   runtime dependencies).
 
+Podkop requires the **service** form of sing-box (`/etc/init.d/sing-box`,
+`/etc/config/sing-box`, `/etc/sing-box/config.json`), not just the binary.
+Lean's `sing-box` package only installs `/usr/bin/sing-box` because PassWall2
+invokes it directly, so the podkop profile installs the official OpenWrt init
+script and UCI defaults as rootfs overlays; Podkop sets `enabled/user/conffile`
+and starts the service itself.
+
 Podkop's upstream Makefile declares a package conflict with
 `luci-app-passwall2`. This variant keeps PassWall2 installed and removes only
 that conflict word in `prepare.sh`; the two daemons both own nftables/dnsmasq
@@ -115,10 +125,15 @@ Builds publish to the rolling
 The sysupgrade tar is an uncompressed tar with fwtool metadata appended:
 `sysupgrade-jiyun_a10/{CONTROL,kernel,root}`. `files/lib/upgrade/platform.sh`
 writes the FIT to SPI NOR `Kernel` first, then streams the ext4 onto
-`/dev/mmcblk0p1`; the first-boot initramfs grows p1 to the full eMMC. The hook
-is only installed in the Podkop image. For the **first** upgrade from an older
-build that still has the generic `platform.sh`, copy the hook first (the
-release notes contain the exact commands); afterwards LuCI's
+`/dev/mmcblk0p1`, extracts the saved config onto the new rootfs, and leaves the
+first-boot initramfs to grow p1 to the full eMMC. The initramfs uses
+`resize2fs -f` because the freshly written rootfs has been mounted rw and the
+default resize2fs check refuses to grow it; the hook keeps a stage-2 log at
+eMMC LBA 1020 (`dd if=/dev/mmcblk0 bs=512 skip=1020 count=8 | strings`).
+
+The hook is only installed in the Podkop image. For the **first** upgrade from
+an older build that still has the generic `platform.sh`, copy the hook first
+(the release notes contain the exact commands); afterwards LuCI's
 *System → Backup / Flash Firmware* works directly.
 
 ## Flash packages

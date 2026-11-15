@@ -25,6 +25,15 @@ on:
       - "**.md"
       - "docs/**"
       - ".github/workflows/**"
+      # Podkop-only inputs: changes here are built by build-podkop.yml.
+      # Shared inputs (scripts/prepare.sh, files/armv8-jiyun-a10.mk,
+      # scripts/mkfit.py, scripts/mk-spi-img.py, the initramfs scripts)
+      # still trigger both workflows on purpose.
+      - "configs/config.podkop.seed"
+      - "package/podkop/**"
+      - "package/luci-app-podkop/**"
+      - "files/lib/upgrade/platform.sh"
+      - "scripts/mk-sysupgrade.sh"
   schedule:
     - cron: "0 18 * * 5"
 

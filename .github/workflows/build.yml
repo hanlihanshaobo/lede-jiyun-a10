@@ -167,6 +167,13 @@ jobs:
           cp configs/config.seed lede/.config
           cd lede
           make defconfig
+          # Opt-in: a main config that selects podkop also gets the
+          # FIT-aware sysupgrade hook.  The default main config does not.
+          if grep -q '^CONFIG_PACKAGE_podkop=y$' .config; then
+            install -D -m 0755 ../files/lib/upgrade/platform.sh \
+              files/lib/upgrade/platform.sh
+            echo "podkop selected: installed sysupgrade hook"
+          fi
           echo "== target/device =="
           grep -E "CONFIG_TARGET_(rockchip|.*jiyun_a10)" .config || true
           echo "== switch driver =="

@@ -599,60 +599,26 @@ install -m 0644 "$ROOT/package/luci-app-macsplit/root/etc/config/macsplit" \
 fi
 
 # ---------------------------------------------------------------------------
-# 12. Podkop feed (podkop profile only)
+# 12. Vendored Podkop packages
 #
-# Podkop ships the routing daemon (podkop) and its LuCI page
-# (luci-app-podkop).  Both are vendored under package/ (same model as
-# luci-app-emmc-health) instead of adding another upstream feed.  The
-# vendored podkop Makefile declares CONFLICTS with luci-app-passwall2
-# because both own nftables/dnsmasq routing; this variant keeps PassWall2
-# installed (the main-profile proxy stack), so that one word is removed
-# in package/podkop/Makefile.  At runtime only one daemon may manage the
-# rules; the LuCI pages leave that choice to the user.
+# podkop and luci-app-podkop are vendored under package/ (same model as
+# luci-app-emmc-health), so they are always available to any .config; no
+# extra upstream feed is cloned.  Selecting CONFIG_PACKAGE_podkop /
+# CONFIG_PACKAGE_luci-app-podkop in the config is what actually builds and
+# installs them.  package/podkop/Makefile also ships the sing-box procd
+# service (Lean's sing-box package only has the binary) and removes the
+# PassWall2 conflict word, because this variant keeps PassWall2 installed.
+#
+# The FIT-aware sysupgrade hook is installed by the build workflows after
+# make defconfig, only when CONFIG_PACKAGE_podkop=y; it is not forced here.
 # ---------------------------------------------------------------------------
-if [ "$PROFILE" = podkop ]; then
-	say "install podkop + luci-app-podkop"
-	# Vendored under package/ like luci-app-emmc-health: no extra feed, and
-	# the source is visible in this repository.  package/podkop/Makefile has
-	# the local CONFLICTS patch (PassWall2 is kept in this variant).
-	rm -rf "$LEDE/package/podkop" "$LEDE/package/luci-app-podkop"
-	cp -a "$ROOT/package/podkop" "$LEDE/package/"
-	cp -a "$ROOT/package/luci-app-podkop" "$LEDE/package/"
-	if grep -q 'luci-app-passwall2' "$LEDE/package/podkop/Makefile"; then
-		echo "ERROR: vendored podkop Makefile still conflicts with PassWall2" >&2
-		exit 1
-	fi
-
-	# sysupgrade hook: a Podkop image updates both the eMMC rootfs and the
-	# SPI NOR "Kernel" FIT.  The main profile keeps the generic platform.sh
-	# (it has no FIT-bearing upgrade package).
-	#
-	# Install it in *both* places: the target base-files overlay (so the
-	# base-files package itself carries it) and the global files/ overlay,
-	# which prepare_rootfs() applies after every package.  The first attempt
-	# only copied it into target/linux/rockchip/base-files and the built image
-	# still had the generic script, so the global overlay is the load-bearing
-	# copy.
-	say "install sysupgrade platform hook"
-	mkdir -p "$BASE/lib/upgrade" "$LEDE/files/lib/upgrade"
-	install -m 0755 "$ROOT/files/lib/upgrade/platform.sh" \
-		"$BASE/lib/upgrade/platform.sh"
-	install -m 0755 "$ROOT/files/lib/upgrade/platform.sh" \
-		"$LEDE/files/lib/upgrade/platform.sh"
-
-	# Podkop needs the *service* form of sing-box.  Lean's sing-box package
-	# only ships /usr/bin/sing-box (PassWall2 runs it itself), so add the
-	# official OpenWrt init script + UCI defaults as overlays.  Podkop sets
-	# enabled/user/conffile and calls /etc/init.d/sing-box start itself.
-	say "install sing-box service overlay"
-	mkdir -p "$LEDE/files/etc/init.d" "$LEDE/files/etc/config" \
-		"$LEDE/files/etc/sing-box"
-	install -m 0755 "$ROOT/files/etc/init.d/sing-box" \
-		"$LEDE/files/etc/init.d/sing-box"
-	install -m 0644 "$ROOT/files/etc/config/sing-box" \
-		"$LEDE/files/etc/config/sing-box"
-	install -m 0644 "$ROOT/files/etc/sing-box/config.json" \
-		"$LEDE/files/etc/sing-box/config.json"
+say "install podkop + luci-app-podkop"
+rm -rf "$LEDE/package/podkop" "$LEDE/package/luci-app-podkop"
+cp -a "$ROOT/package/podkop" "$LEDE/package/"
+cp -a "$ROOT/package/luci-app-podkop" "$LEDE/package/"
+if grep -q 'luci-app-passwall2' "$LEDE/package/podkop/Makefile"; then
+	echo "ERROR: vendored podkop Makefile still conflicts with PassWall2" >&2
+	exit 1
 fi
 
 say "done"

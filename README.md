@@ -17,9 +17,6 @@ scripts/mk-sysupgrade.sh        root.ext4 + kernel FIT -> in-system upgrade tar
 files/rk3568-jiyun-a10.dts      Device tree (DSA switch + PCIe + gmac)
 files/armv8-jiyun-a10.mk        Device/image recipe (DEVICE_PACKAGES, IMAGE/emmc.img)
 files/lib/upgrade/platform.sh   sysupgrade hook: eMMC rootfs + SPI Kernel FIT
-files/etc/init.d/sing-box        official sing-box procd service (podkop profile)
-files/etc/config/sing-box        UCI defaults for that service
-files/etc/sing-box/config.json   placeholder config (podkop rewrites it)
 files/99-jiyun-net              uci-defaults: br-lan over lan1/2/3, wan, CID-derived MACs
 files/etc/jiyun-mac.sh          per-unit WLAN MACs, runs from rc.local
 files/etc/rc.local              invokes jiyun-mac.sh at the end of boot
@@ -30,6 +27,8 @@ files/stock_uboot.bin           stock u-boot FIT (U-Boot + ATF + OP-TEE + MCU)
 files/mk-emmc-img.py            MBR + root.ext4 -> eMMC flashing image
 package/luci-app-multiwifi/     Multi-SSID + PassWall2 routing app (installed by prepare.sh)
 package/luci-app-macsplit/      Per-MAC PassWall2 routing app (wired + wireless, installed by prepare.sh)
+package/podkop/                 Podkop daemon + sing-box procd service (config-selected)
+package/luci-app-podkop/        Podkop LuCI app (config-selected)
 configs/config.seed             seed .config (target/device, BTF off, MMC)
 configs/config.podkop.seed      slim variant: no QModem/SSR+/OpenClash/eMMC health/Vlmcsd/vsftpd, + Podkop
 tools/mkfit.py                  repack kernel+DTB into the stock (data-position) FIT
@@ -101,12 +100,14 @@ independent artifacts:
 * added: `podkop` + `luci-app-podkop` (and its sing-box/nft-tproxy/bind-dig
   runtime dependencies).
 
-Podkop requires the **service** form of sing-box (`/etc/init.d/sing-box`,
+The packages are vendored under `package/` (like `luci-app-emmc-health`), so
+any `.config` can select them; `config.podkop.seed` is just the config that
+does.  Podkop requires the **service** form of sing-box (`/etc/init.d/sing-box`,
 `/etc/config/sing-box`, `/etc/sing-box/config.json`), not just the binary.
 Lean's `sing-box` package only installs `/usr/bin/sing-box` because PassWall2
-invokes it directly, so the podkop profile installs the official OpenWrt init
-script and UCI defaults as rootfs overlays; Podkop sets `enabled/user/conffile`
-and starts the service itself.
+invokes it directly, so `package/podkop/` ships the official OpenWrt init
+script and UCI defaults; Podkop sets `enabled/user/conffile` and starts the
+service itself.
 
 Podkop's upstream Makefile declares a package conflict with
 `luci-app-passwall2`. This variant keeps PassWall2 installed and removes only

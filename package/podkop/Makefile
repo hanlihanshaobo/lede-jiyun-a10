@@ -11,12 +11,12 @@ PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
 
+# Local patch: the Jiyun podkop variant keeps luci-app-passwall2 installed
+# (both manage nftables/dnsmasq routing; only one may run at a time).
 define Package/podkop
 	SECTION:=net
 	CATEGORY:=Network
 	DEPENDS:=+sing-box +curl +jq +kmod-nft-tproxy +coreutils-base64 +bind-dig
-	# Local patch: the Jiyun podkop variant keeps luci-app-passwall2 installed
-	# (both manage nftables/dnsmasq routing; only one may run at a time).
 	CONFLICTS:=https-dns-proxy nextdns luci-app-passwall
 	TITLE:=Domain routing app
 	URL:=https://podkop.net
@@ -39,20 +39,29 @@ define Package/podkop/prerm
 grep -q "105 podkop" /etc/iproute2/rt_tables && sed -i "/105 podkop/d" /etc/iproute2/rt_tables
 
 /etc/init.d/podkop stop
+/etc/init.d/sing-box stop 2>/dev/null || true
 
 exit 0
 endef
 
 define Package/podkop/conffiles
 /etc/config/podkop
+/etc/config/sing-box
 endef
 
 define Package/podkop/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/podkop $(1)/etc/init.d/podkop
+	# podkop requires the procd service form of sing-box; Lean's sing-box
+	# package only ships the binary, so ship the official init/UCI files here.
+	$(INSTALL_BIN) ./files/etc/init.d/sing-box $(1)/etc/init.d/sing-box
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/podkop $(1)/etc/config/podkop
+	$(INSTALL_CONF) ./files/etc/config/sing-box $(1)/etc/config/sing-box
+
+	$(INSTALL_DIR) $(1)/etc/sing-box
+	$(INSTALL_CONF) ./files/etc/sing-box/config.json $(1)/etc/sing-box/config.json
 
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) ./files/usr/bin/podkop $(1)/usr/bin/podkop
